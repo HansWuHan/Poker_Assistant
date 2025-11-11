@@ -33,7 +33,7 @@ class GameController:
         self.game_config = config.get_game_config()
         self.ai_config = config.get_ai_config()
         self.renderer = GameRenderer()
-        self.input_handler = InputHandler(chat_callback=self._handle_chat)
+        self.input_handler = InputHandler(chat_callback=self._handle_chat, renderer=self.renderer)
         self.game_state = None
         self.human_player = None
         self.ai_players = []
@@ -187,18 +187,21 @@ class GameController:
         # 渲染当前状态
         self.renderer.render_table_state(round_state, hole_card)
         
-        # AI 建议
-        if self.ai_enabled and self.ai_config.get('auto_show_advice', True):
-            try:
-                advice = self._get_ai_advice(valid_actions, hole_card, round_state)
-                self.renderer.render_ai_advice(advice)
-            except Exception as e:
-                if self.config.DEBUG:
-                    self.renderer.render_error(f"获取 AI 建议失败: {e}")
+        # 定义AI建议回调函数 - 用户按'O'时才会调用
+        def get_ai_advice():
+            if self.ai_enabled:
+                try:
+                    return self._get_ai_advice(valid_actions, hole_card, round_state)
+                except Exception as e:
+                    if self.config.DEBUG:
+                        self.renderer.render_error(f"获取 AI 建议失败: {e}")
+                    return None
+            return None
         
-        # 获取用户输入
+        # 获取用户输入（现在包含O选项）
         action, amount = self.input_handler.get_action(
-            valid_actions, hole_card, round_state
+            valid_actions, hole_card, round_state, 
+            ai_advice_callback=get_ai_advice if self.ai_enabled else None
         )
         
         return action, amount

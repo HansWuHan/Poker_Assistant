@@ -9,16 +9,18 @@ import sys
 class InputHandler:
     """输入处理器"""
     
-    def __init__(self, chat_callback: Optional[Callable] = None):
+    def __init__(self, chat_callback: Optional[Callable] = None, renderer=None):
         """
         Args:
             chat_callback: 处理聊天的回调函数
+            renderer: 游戏渲染器，用于显示AI分析
         """
         self.chat_callback = chat_callback
+        self.renderer = renderer
         self.chat_mode = False
     
     def get_action(self, valid_actions: list, hole_card: list, 
-                   round_state: dict) -> Tuple[str, int]:
+                   round_state: dict, ai_advice_callback=None) -> Tuple[str, int]:
         """
         获取用户行动
         
@@ -26,6 +28,7 @@ class InputHandler:
             valid_actions: 可选行动列表
             hole_card: 手牌
             round_state: 回合状态
+            ai_advice_callback: AI建议回调函数，用于获取牌力分析
         
         Returns:
             (action, amount) 元组
@@ -34,8 +37,8 @@ class InputHandler:
         call_action = valid_actions[1]
         raise_action = valid_actions[2]
         
-        # 显示提示信息
-        self._show_action_prompt(call_action, raise_action)
+        # 显示提示信息（现在包含O选项）
+        self._show_action_prompt(call_action, raise_action, ai_advice_callback is not None)
         
         while True:
             try:
@@ -52,6 +55,29 @@ class InputHandler:
                 
                 elif user_input == 'S' or user_input == 'STATUS':
                     self._show_status(round_state)
+                    continue
+                
+                elif user_input == 'O' or user_input == 'ADVICE':
+                    # 获取AI牌力分析
+                    if ai_advice_callback:
+                        try:
+                            # 显示loading状态
+                            print("\n⏳ 正在获取AI牌力分析...")
+                            
+                            advice = ai_advice_callback()
+                            if advice:
+                                # 使用renderer显示AI分析（如果有renderer）
+                                if self.renderer and hasattr(self.renderer, 'render_ai_advice'):
+                                    self.renderer.render_ai_advice(advice)
+                                else:
+                                    # 备用显示方式
+                                    print(f"\n🤖 AI分析: {advice}")
+                            else:
+                                print("\n⚠️ 无法获取AI分析")
+                        except Exception as e:
+                            print(f"\n⚠️ 获取AI分析失败: {e}")
+                    else:
+                        print("\n⚠️ AI功能未启用")
                     continue
                 
                 # 处理行动
@@ -91,7 +117,7 @@ class InputHandler:
                 print("\n游戏被中断")
                 return fold_action['action'], fold_action['amount']
     
-    def _show_action_prompt(self, call_action: dict, raise_action: dict):
+    def _show_action_prompt(self, call_action: dict, raise_action: dict, ai_enabled: bool = False):
         """显示行动提示"""
         actions = []
         actions.append("[F]弃牌")
@@ -102,6 +128,9 @@ class InputHandler:
             max_raise = raise_action['amount']['max']
             actions.append(f"[R]加注(${min_raise}-${max_raise})")
             actions.append(f"[A]全下(${max_raise})")
+        
+        if ai_enabled:
+            actions.append("[O]牌力分析")
         
         actions.append("[Q]提问")
         actions.append("[H]帮助")
@@ -182,6 +211,7 @@ class InputHandler:
         print("C / CALL    - 跟注")
         print("R / RAISE   - 加注")
         print("A / ALLIN   - 全下")
+        print("O / ADVICE  - 获取AI牌力分析")
         print("Q / QUESTION - 向 AI 提问")
         print("H / HELP    - 显示帮助")
         print("S / STATUS  - 显示状态")
