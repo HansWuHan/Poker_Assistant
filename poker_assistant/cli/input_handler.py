@@ -94,7 +94,7 @@ class InputHandler:
     def _show_action_prompt(self, call_action: dict, raise_action: dict):
         """显示行动提示"""
         actions = []
-        actions.append("[F]老德")
+        actions.append("[F]弃牌")
         actions.append(f"[C]跟注(${call_action['amount']})")
         
         if raise_action['amount']['min'] != -1:

@@ -1,5 +1,5 @@
 # Core Dependencies
-PyPokerEngine==1.0.7
+PyPokerEngine==1.0.1
 
 # LLM Service
 openai>=1.0.0  # Deepseek 使用兼容 OpenAI 的 API

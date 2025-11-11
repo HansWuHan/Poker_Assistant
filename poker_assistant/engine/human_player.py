@@ -70,7 +70,7 @@ class HumanPlayer(BasePokerPlayer):
         raise_action = valid_actions[2]
         
         print("\n可选行动:")
-        print(f"1. [F]老德 (Fold)")
+        print(f"1. [F]弃牌 (Fold)")
         print(f"2. [C]跟注 (Call) - ${call_action['amount']}")
         
         if raise_action['amount']['min'] != -1:
