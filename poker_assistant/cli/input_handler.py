@@ -92,7 +92,7 @@ class InputHandler:
                         print("❌ 当前不能加注")
                         continue
                     
-                    amount = self._get_raise_amount(raise_action)
+                    amount = self._get_raise_amount(raise_action, round_state)
                     if amount is not None:
                         return raise_action['action'], amount
                 
@@ -137,12 +137,32 @@ class InputHandler:
         
         print("\n" + " | ".join(actions))
     
-    def _get_raise_amount(self, raise_action: dict) -> Optional[int]:
+    def _get_raise_amount(self, raise_action: dict, round_state: dict = None) -> Optional[int]:
         """获取加注金额"""
         min_raise = raise_action['amount']['min']
         max_raise = raise_action['amount']['max']
         
         print(f"\n💰 加注范围: ${min_raise} - ${max_raise}")
+        
+        # 显示加注规则信息
+        if round_state and min_raise > 0:
+            # 获取当前街道的加注历史
+            street = round_state.get('street', 'preflop')
+            action_histories = round_state.get('action_histories', {})
+            
+            if street in action_histories:
+                # 找到当前街道的最大加注
+                max_previous_raise = 0
+                for action in action_histories[street]:
+                    if action.get('action', '').upper() == 'RAISE':
+                        amount = action.get('amount', 0)
+                        max_previous_raise = max(max_previous_raise, amount)
+                
+                if max_previous_raise > 0:
+                    required_min = max_previous_raise * 2  # 至少一倍规则
+                    print(f"📏 加注规则: 必须至少为之前最大加注(${max_previous_raise})的一倍")
+                    print(f"📊 理论最小: ${required_min} (实际最小: ${min_raise})")
+        
         print("💡 提示: 输入 'min' 最小加注, 'max' 全下, 或具体金额")
         
         while True:

@@ -96,7 +96,8 @@ class GameRenderer:
         self.console.print("-"*60, style="yellow")
     
     def render_player_action(self, player_name: str, action: str, 
-                            amount: int, is_human: bool = False):
+                            amount: int, is_human: bool = False, 
+                            round_state: Dict = None, player_uuid: str = None):
         """渲染玩家行动"""
         action_text = format_action(action, amount)
         
@@ -107,7 +108,72 @@ class GameRenderer:
             style = "white"
             icon = "🤖"
         
-        self.console.print(f"{icon} {player_name}: {action_text}", style=style)
+        # 获取额外信息
+        extra_info = []
+        
+        if round_state and player_uuid:
+            # 获取位置信息
+            position = self._get_player_position_display(player_uuid, round_state)
+            if position:
+                extra_info.append(f"[{position}]")
+            
+            # 获取剩余筹码
+            stack = self._get_player_stack(player_uuid, round_state)
+            if stack is not None:
+                extra_info.append(f"剩余:${stack}")
+            
+            # 加注时计算与底池的比例
+            if action.lower() == 'raise' and amount > 0:
+                pot_size = round_state.get('pot', {}).get('main', {}).get('amount', 0)
+                if pot_size > 0:
+                    ratio = (amount / pot_size) * 100
+                    extra_info.append(f"底池:{ratio:.1f}%")
+        
+        # 构建完整信息
+        if extra_info:
+            info_text = " ".join(extra_info)
+            self.console.print(f"{icon} {player_name}: {action_text} {info_text}", style=style)
+        else:
+            self.console.print(f"{icon} {player_name}: {action_text}", style=style)
+    
+    def _get_player_position_display(self, player_uuid: str, round_state: Dict) -> str:
+        """获取玩家位置显示"""
+        seats = round_state.get('seats', [])
+        dealer_btn = round_state.get('dealer_btn', 0)
+        
+        for idx, seat in enumerate(seats):
+            if seat.get('uuid') == player_uuid:
+                if seat.get('stack', 0) <= 0:
+                    return ""
+                
+                # 计算位置
+                if idx == dealer_btn:
+                    return "BTN"
+                else:
+                    # 计算相对位置
+                    active_seats = [i for i, s in enumerate(seats) if s.get('stack', 0) > 0]
+                    if len(active_seats) >= 2:
+                        try:
+                            dealer_idx = active_seats.index(dealer_btn)
+                            current_idx = active_seats.index(idx)
+                            relative_pos = (current_idx - dealer_idx) % len(active_seats)
+                            if relative_pos == 1:
+                                return "SB"
+                            elif relative_pos == 2:
+                                return "BB"
+                        except ValueError:
+                            pass
+                break
+        
+        return ""
+    
+    def _get_player_stack(self, player_uuid: str, round_state: Dict) -> int:
+        """获取玩家剩余筹码"""
+        seats = round_state.get('seats', [])
+        for seat in seats:
+            if seat.get('uuid') == player_uuid:
+                return seat.get('stack', 0)
+        return 0
     
     def render_round_result(self, winners: List[Dict], hand_info: List[Dict], 
                            round_state: Dict, initial_stacks: Dict[str, int] = None,

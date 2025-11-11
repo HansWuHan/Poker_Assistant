@@ -301,7 +301,9 @@ class GameController:
                     player_name,
                     action['action'],
                     action.get('amount', 0),
-                    is_human
+                    is_human,
+                    round_state,
+                    action['player_uuid']
                 )
             
             elif event_type == "round_result":
