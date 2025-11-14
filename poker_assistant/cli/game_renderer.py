@@ -126,8 +126,8 @@ class GameRenderer:
             if action.lower() == 'raise' and amount > 0:
                 pot_size = round_state.get('pot', {}).get('main', {}).get('amount', 0)
                 if pot_size > 0:
-                    ratio = (amount / pot_size) * 100
-                    extra_info.append(f"底池:{ratio:.1f}%")
+                    ratio = int((amount / pot_size) * 100)
+                    extra_info.append(f"底池:{ratio}%")
         
         # 构建完整信息
         if extra_info:

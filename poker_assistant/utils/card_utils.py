@@ -193,6 +193,8 @@ def format_chips(amount: int) -> str:
     Returns:
         格式化后的字符串
     """
+    # 确保amount是整数，避免小数显示
+    amount = int(round(amount))
     if amount >= 1000:
         return f"${amount:,}"
     return f"${amount}"

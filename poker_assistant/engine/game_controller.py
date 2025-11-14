@@ -6,7 +6,7 @@ from typing import Optional, Callable, Dict, Any, List
 from pypokerengine.api.game import setup_config, start_poker
 
 from poker_assistant.engine.human_player import HumanPlayer
-from poker_assistant.engine.ai_opponent import AIOpponentPlayer
+from poker_assistant.engine.improved_ai_opponent import ImprovedAIOpponentPlayer as EnhancedAIOpponentPlayer
 from poker_assistant.engine.game_state import GameState
 from poker_assistant.cli.game_renderer import GameRenderer
 from poker_assistant.cli.input_handler import InputHandler
@@ -113,6 +113,12 @@ class GameController:
         # 创建游戏状态
         self.game_state = GameState(player_count, initial_stack)
         
+        # 创建输入处理器
+        self.input_handler = InputHandler(
+            chat_callback=self._handle_chat if hasattr(self, '_handle_chat') else None,
+            renderer=self.renderer
+        )
+        
         # 创建人类玩家
         self.human_player = HumanPlayer(
             input_callback=self._get_human_action,
@@ -122,9 +128,27 @@ class GameController:
         # 创建 AI 对手
         ai_difficulties = self._get_ai_difficulties(player_count - 1)
         self.ai_players = [
-            AIOpponentPlayer(difficulty=diff, shared_hole_cards=self.shared_hole_cards) 
+            EnhancedAIOpponentPlayer(difficulty=diff, shared_hole_cards=self.shared_hole_cards, show_thinking=True) 
             for diff in ai_difficulties
         ]
+        
+        # 保存输入处理器的引用，用于同步AI思考显示模式
+        self.input_handler_ref = self.input_handler  # 保存引用用于P按钮功能
+        
+        # 添加P按钮处理 - 切换AI思考显示模式
+        self.input_handler.ai_thinking_toggle_callback = self.toggle_ai_thinking_display
+    
+    def toggle_ai_thinking_display(self):
+        """切换AI思考显示模式"""
+        # 切换所有AI玩家的思考显示模式
+        for ai_player in self.ai_players:
+            if hasattr(ai_player, 'show_thinking'):
+                ai_player.show_thinking = not ai_player.show_thinking
+        
+        # 返回当前状态
+        if self.ai_players:
+            return self.ai_players[0].show_thinking if hasattr(self.ai_players[0], 'show_thinking') else True
+        return True
     
     def _create_poker_config(self):
         """创建 PyPokerEngine 配置"""
@@ -203,6 +227,20 @@ class GameController:
             valid_actions, hole_card, round_state, 
             ai_advice_callback=get_ai_advice if self.ai_enabled else None
         )
+        
+        # 保存输入处理器引用，用于后续功能（如切换AI思考显示）
+        if not hasattr(self, 'input_handler_ref') or self.input_handler_ref is None:
+            self.input_handler_ref = self.input_handler
+        
+        # 处理P按钮 - 切换AI思考显示
+        if action == 'P':
+            # 切换AI思考显示模式
+            new_status = self.toggle_ai_thinking_display()
+            status_text = "开启" if new_status else "关闭"
+            self.renderer.render_info(f"🔄 AI思考显示已{status_text}")
+            
+            # 重新获取用户输入（跳过当前行动）
+            return self._get_human_action(valid_actions, hole_card, round_state)
         
         return action, amount
     

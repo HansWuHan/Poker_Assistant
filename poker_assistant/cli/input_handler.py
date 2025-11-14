@@ -18,6 +18,8 @@ class InputHandler:
         self.chat_callback = chat_callback
         self.renderer = renderer
         self.chat_mode = False
+        self.ai_thinking_toggle_callback = None  # AI思考显示切换回调
+        self.ai_show_thinking = True  # 默认显示AI思考过程
     
     def get_action(self, valid_actions: list, hole_card: list, 
                    round_state: dict, ai_advice_callback=None) -> Tuple[str, int]:
@@ -103,8 +105,23 @@ class InputHandler:
                         print("❌ 当前不能全下")
                         continue
                 
+                elif user_input == 'P':
+                    # 切换AI思考显示模式
+                    if hasattr(self, 'ai_thinking_toggle_callback') and self.ai_thinking_toggle_callback:
+                        # 使用回调函数切换所有AI玩家的思考显示
+                        new_status = self.ai_thinking_toggle_callback()
+                        status_text = "开启" if new_status else "关闭"
+                        print(f"\n🔄 AI思考显示已{status_text}")
+                    else:
+                        # 本地切换（仅影响当前输入处理器）
+                        self.ai_show_thinking = not self.ai_show_thinking
+                        status = "开启" if self.ai_show_thinking else "关闭"
+                        print(f"\n🔄 AI思考显示已{status}")
+                    print("-" * 40)
+                    continue
+                
                 else:
-                    print("❌ 无效的输入，请输入 F/C/R/A/Q/H 或完整命令")
+                    print("❌ 无效的输入，请输入 F/C/R/A/Q/H/P 或完整命令")
             
             except KeyboardInterrupt:
                 print("\n")
@@ -131,6 +148,10 @@ class InputHandler:
         
         if ai_enabled:
             actions.append("[O]牌力分析")
+        
+        # 添加AI思考显示切换按钮
+        thinking_status = "开启" if self.ai_show_thinking else "关闭"
+        actions.append(f"[P]AI思考({thinking_status})")
         
         actions.append("[Q]提问")
         actions.append("[H]帮助")
