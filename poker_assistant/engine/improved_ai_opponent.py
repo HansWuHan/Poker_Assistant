@@ -39,6 +39,8 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
     
     def declare_action(self, valid_actions, hole_card, round_state):
         """决定下一步行动"""
+        import time
+        
         fold_action = valid_actions[0]
         call_action = valid_actions[1]
         raise_action = valid_actions[2]
@@ -52,6 +54,10 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
                 hole_card, round_state, valid_actions
             )
             self._display_thinking(thinking_process)
+            
+            # 添加1秒延时，显示思考中提示
+            print("🤔 AI正在思考中...")
+            time.sleep(1)
         
         # 根据难度选择策略
         if self.difficulty == "easy":
@@ -412,7 +418,7 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
                     return call_action['action'], call_action['amount']
                 elif (raise_action['amount']['min'] != -1 and random.random() < 0.15 and 
                       position_factor >= 1.1):  # 位置好时偶尔偷盲
-                    amount = max(raise_action['amount']['min'], int(pot * 0.4))
+                    amount = self._calculate_value_bet_size(hand_strength * 0.5, pot, raise_action, round_state)
                     return raise_action['action'], amount
                 else:
                     return fold_action['action'], fold_action['amount']
@@ -435,11 +441,11 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
                 # 超强牌
                 if opponent_tendency > 1.2:  # 对手激进，可以大注
                     if random.random() < 0.7 and raise_action['amount']['min'] != -1:
-                        bet_size = self._calculate_value_bet_size(hand_strength * 1.1, pot, raise_action)
+                        bet_size = self._calculate_value_bet_size(hand_strength * 1.1, pot, raise_action, round_state)
                         return raise_action['action'], bet_size
                 else:  # 对手保守，标准价值下注
                     if random.random() < 0.6 and raise_action['amount']['min'] != -1:
-                        bet_size = self._calculate_value_bet_size(hand_strength, pot, raise_action)
+                        bet_size = self._calculate_value_bet_size(hand_strength, pot, raise_action, round_state)
                         return raise_action['action'], bet_size
                 
                 # 80%概率至少跟注
@@ -458,7 +464,7 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
                     return call_action['action'], call_action['amount']
                 elif (raise_action['amount']['min'] != -1 and random.random() < 0.3 and 
                       pot_odds <= 0.3):  # 半诈唬
-                    amount = max(raise_action['amount']['min'], int(pot * 0.55))
+                    amount = self._calculate_value_bet_size(hand_strength * 0.8, pot, raise_action, round_state)
                     return raise_action['action'], amount
                 elif call_action['amount'] == 0:
                     return call_action['action'], call_action['amount']
@@ -477,7 +483,7 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
                         return call_action['action'], call_action['amount']
                 elif (raise_action['amount']['min'] != -1 and random.random() < 0.2 and 
                       pot_odds <= 0.25 and position_factor >= 1.05):  # 位置好时半诈唬
-                    amount = max(raise_action['amount']['min'], int(pot * 0.45))
+                    amount = self._calculate_value_bet_size(hand_strength * 0.7, pot, raise_action, round_state)
                     return raise_action['action'], amount
                 elif call_action['amount'] == 0:
                     return call_action['action'], call_action['amount']
@@ -492,7 +498,7 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
                     return call_action['action'], call_action['amount']
                 elif (raise_action['amount']['min'] != -1 and random.random() < 0.15 and 
                       pot_odds <= 0.2 and opponent_tendency > 1.1):  # 对激进对手诈唬
-                    amount = max(raise_action['amount']['min'], int(pot * 0.4))
+                    amount = self._calculate_value_bet_size(hand_strength * 0.6, pot, raise_action, round_state)
                     return raise_action['action'], amount
                 elif call_action['amount'] == 0:
                     return call_action['action'], call_action['amount']
@@ -506,7 +512,7 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
                 # 对激进对手偶尔诈唬（12%）
                 elif (raise_action['amount']['min'] != -1 and random.random() < 0.12 and 
                       opponent_tendency > 1.2 and pot_odds <= 0.2):
-                    amount = max(raise_action['amount']['min'], int(pot * 0.35))
+                    amount = self._calculate_value_bet_size(hand_strength * 0.5, pot, raise_action, round_state)
                     return raise_action['action'], amount
                 return fold_action['action'], fold_action['amount']
     
@@ -584,7 +590,7 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
                     return call_action['action'], call_action['amount']
                 elif (raise_action['amount']['min'] != -1 and random.random() < 0.25 and 
                       position_factor >= 1.1):  # 位置好时偷盲
-                    amount = max(raise_action['amount']['min'], int(pot * 0.5))
+                    amount = self._calculate_value_bet_size(hand_strength * 0.6, pot, raise_action, round_state)
                     return raise_action['action'], amount
                 else:
                     return fold_action['action'], fold_action['amount']
@@ -603,15 +609,19 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
             # 根据牌面纹理和对手类型调整策略
             effective_strength = adjusted_strength
             
-            if effective_strength >= 0.85:
-                # 超强牌
+            # 检查是否只有高牌（没有成牌）
+            actual_strength = self._evaluate_actual_hand_strength(hole_card, round_state.get('community_card', []))
+            has_made_hand = actual_strength >= 0.4  # 是否有成牌（对子及以上）
+            
+            if effective_strength >= 0.85 and has_made_hand:
+                # 超强牌且有成牌
                 if opponent_tendency > 1.3:  # 对手很激进
                     if random.random() < 0.8 and raise_action['amount']['min'] != -1:
-                        bet_size = self._calculate_value_bet_size(hand_strength * 1.2, pot, raise_action)
+                        bet_size = self._calculate_value_bet_size(hand_strength * 1.2, pot, raise_action, round_state)
                         return raise_action['action'], bet_size
                 else:  # 对手保守
                     if random.random() < 0.7 and raise_action['amount']['min'] != -1:
-                        bet_size = self._calculate_value_bet_size(hand_strength * 1.1, pot, raise_action)
+                        bet_size = self._calculate_value_bet_size(hand_strength * 1.1, pot, raise_action, round_state)
                         return raise_action['action'], bet_size
                 
                 # 85%概率至少跟注
@@ -619,8 +629,18 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
                     return call_action['action'], call_action['amount']
                 return fold_action['action'], fold_action['amount']
                 
-            elif effective_strength >= 0.65:
-                # 强牌
+            elif effective_strength >= 0.85 and not has_made_hand:
+                # 高牌被高估，实际上只有高牌
+                pot_odds = call_action['amount'] / (pot + call_action['amount'])
+                
+                # 只有高牌时，只在赔率很好或免费看牌时跟注
+                if pot_odds <= 0.15 or call_action['amount'] == 0:
+                    return call_action['action'], call_action['amount']
+                else:
+                    return fold_action['action'], fold_action['amount']
+                
+            elif effective_strength >= 0.65 and has_made_hand:
+                # 强牌且有成牌
                 pot_odds = call_action['amount'] / (pot + call_action['amount'])
                 
                 if pot_odds <= 0.3 and hand_strength >= 0.55:  # 赔率合适
@@ -630,15 +650,25 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
                     return call_action['action'], call_action['amount']
                 elif (raise_action['amount']['min'] != -1 and random.random() < 0.4 and 
                       pot_odds <= 0.35):  # 半诈唬
-                    amount = max(raise_action['amount']['min'], int(pot * 0.65))
+                    amount = self._calculate_value_bet_size(hand_strength * 0.8, pot, raise_action, round_state)
                     return raise_action['action'], amount
                 elif call_action['amount'] == 0:
                     return call_action['action'], call_action['amount']
                 else:
                     return fold_action['action'], fold_action['amount']
                     
-            elif effective_strength >= 0.45:
-                # 中等牌力
+            elif effective_strength >= 0.65 and not has_made_hand:
+                # 中等强度但只有高牌
+                pot_odds = call_action['amount'] / (pot + call_action['amount'])
+                
+                # 只有高牌时，只在赔率很好或免费看牌时跟注
+                if pot_odds <= 0.2 or call_action['amount'] == 0:
+                    return call_action['action'], call_action['amount']
+                else:
+                    return fold_action['action'], fold_action['amount']
+                    
+            elif effective_strength >= 0.45 and has_made_hand:
+                # 中等牌力且有成牌
                 pot_odds = call_action['amount'] / (pot + call_action['amount'])
                 
                 if pot_odds <= 0.25 and hand_strength >= 0.4:  # 赔率很好
@@ -649,24 +679,44 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
                         return call_action['action'], call_action['amount']
                 elif (raise_action['amount']['min'] != -1 and random.random() < 0.3 and 
                       pot_odds <= 0.3 and position_factor >= 1.05):  # 位置好时半诈唬
-                    amount = max(raise_action['amount']['min'], int(pot * 0.55))
+                    amount = self._calculate_value_bet_size(hand_strength * 0.7, pot, raise_action, round_state)
                     return raise_action['action'], amount
                 elif call_action['amount'] == 0:
                     return call_action['action'], call_action['amount']
                 else:
                     return fold_action['action'], fold_action['amount']
                     
-            elif effective_strength >= 0.3:
-                # 边缘牌力
+            elif effective_strength >= 0.45 and not has_made_hand:
+                # 中等强度但只有高牌
+                pot_odds = call_action['amount'] / (pot + call_action['amount'])
+                
+                # 只有高牌时，只在赔率很好或免费看牌时跟注
+                if pot_odds <= 0.15 or call_action['amount'] == 0:
+                    return call_action['action'], call_action['amount']
+                else:
+                    return fold_action['action'], fold_action['amount']
+                    
+            elif effective_strength >= 0.3 and has_made_hand:
+                # 边缘牌力但有成牌
                 pot_odds = call_action['amount'] / (pot + call_action['amount'])
                 
                 if pot_odds <= 0.2 and hand_strength >= 0.3:  # 赔率很好
                     return call_action['action'], call_action['amount']
                 elif (raise_action['amount']['min'] != -1 and random.random() < 0.2 and 
                       pot_odds <= 0.25 and opponent_tendency > 1.2):  # 对激进对手诈唬
-                    amount = max(raise_action['amount']['min'], int(pot * 0.5))
+                    amount = self._calculate_value_bet_size(hand_strength * 0.6, pot, raise_action, round_state)
                     return raise_action['action'], amount
                 elif call_action['amount'] == 0:
+                    return call_action['action'], call_action['amount']
+                else:
+                    return fold_action['action'], fold_action['amount']
+                    
+            elif effective_strength >= 0.3 and not has_made_hand:
+                # 边缘牌力且只有高牌
+                pot_odds = call_action['amount'] / (pot + call_action['amount'])
+                
+                # 只有高牌时，只在赔率很好或免费看牌时跟注
+                if pot_odds <= 0.15 or call_action['amount'] == 0:
                     return call_action['action'], call_action['amount']
                 else:
                     return fold_action['action'], fold_action['amount']
@@ -675,32 +725,48 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
                 # 弱牌
                 if call_action['amount'] == 0:
                     return call_action['action'], call_action['amount']
-                # 对激进对手偶尔诈唬（15%）
-                elif (raise_action['amount']['min'] != -1 and random.random() < 0.15 and 
+                # 只有高牌时，降低诈唬频率
+                elif (not has_made_hand and 
+                      raise_action['amount']['min'] != -1 and random.random() < 0.1 and 
+                      opponent_tendency > 1.2 and pot_odds <= 0.2):
+                    # 高牌诈唬要更谨慎（10%概率）
+                    amount = self._calculate_value_bet_size(hand_strength * 0.4, pot, raise_action, round_state)
+                    return raise_action['action'], amount
+                elif (has_made_hand and 
+                      raise_action['amount']['min'] != -1 and random.random() < 0.15 and 
                       opponent_tendency > 1.2 and pot_odds <= 0.25):
-                    amount = max(raise_action['amount']['min'], int(pot * 0.45))
+                    # 有成牌时可以稍微激进一些（15%概率）
+                    amount = self._calculate_value_bet_size(hand_strength * 0.6, pot, raise_action, round_state)
                     return raise_action['action'], amount
                 return fold_action['action'], fold_action['amount']
     
     def _evaluate_real_hand_strength(self, hole_card, community_card):
-        """评估真实牌力（0-1）"""
+        """评估真实牌力（0-1）- 修复高牌高估问题"""
         if not hole_card or len(hole_card) < 2:
             return 0.0
         
-        # 基础牌力评估
+        # 基础牌力评估（仅基于手牌）
         base_strength = self._evaluate_hand_simple(hole_card, community_card)
         
         # 如果有公共牌，进行更精确评估
         if community_card and len(community_card) >= 3:
-            # 这里可以集成更复杂的牌力评估
-            # 现在简化处理：根据公共牌调整评估
+            # 评估实际牌力，而不是仅仅基于手牌
+            actual_strength = self._evaluate_actual_hand_strength(hole_card, community_card)
+            
+            # 如果实际牌力远低于基础牌力，说明高牌被高估了
+            if actual_strength < base_strength * 0.7:
+                return actual_strength
+            
+            # 考虑公共牌协调性
             board_coordination = self._assess_board_coordination(community_card)
             
             # 协调的公共牌降低牌力（更危险）
             if board_coordination > 0.7:
-                base_strength *= 0.85
+                actual_strength *= 0.85
             elif board_coordination < 0.3:
-                base_strength *= 1.1
+                actual_strength *= 1.1
+            
+            return min(1.0, actual_strength)
         
         return min(1.0, base_strength)
     
@@ -765,32 +831,230 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         else:  # 正常
             return 1.0
     
-    def _calculate_value_bet_size(self, hand_strength, pot, raise_action):
-        """计算价值下注大小（更智能）"""
+    def _calculate_value_bet_size(self, hand_strength, pot, raise_action, round_state=None):
+        """计算价值下注大小（更智能和情境化）"""
         min_raise = raise_action['amount']['min']
         max_raise = raise_action['amount']['max']
         
-        # 根据牌力决定下注比例
+        # 获取当前筹码深度信息
+        my_stack = self._get_my_stack(round_state) if round_state else 1000
+        
+        # 计算筹码深度（以当前底池为基准）
+        stack_depth = my_stack / pot if pot > 0 else 20
+        
+        # 获取街道信息
+        street = round_state.get('street', 'preflop') if round_state else 'preflop'
+        
+        # 获取对手倾向
+        opponent_tendency = self._analyze_opponent_tendency(round_state) if round_state else 1.0
+        
+        # 获取位置因子
+        position_factor = self._get_position_factor(round_state) if round_state else 1.0
+        
+        # 根据牌力、筹码深度、街道和位置决定下注比例
         if hand_strength >= 0.9:  # 极强牌
-            bet_ratio = random.uniform(0.8, 1.0)
+            if stack_depth > 20:  # 深筹码
+                if street == 'preflop':
+                    bet_ratio = random.uniform(0.8, 1.0)  # 翻牌前可以更激进
+                else:
+                    bet_ratio = random.uniform(0.7, 0.9)  # 翻牌后控制底池
+            elif stack_depth < 5:  # 浅筹码
+                bet_ratio = random.uniform(0.9, 1.0)  # 可以更激进
+            else:  # 中等筹码
+                bet_ratio = random.uniform(0.8, 1.0)
+                
         elif hand_strength >= 0.8:  # 强牌
-            bet_ratio = random.uniform(0.65, 0.85)
+            if stack_depth > 20:
+                if street == 'preflop':
+                    bet_ratio = random.uniform(0.7, 0.9)
+                else:
+                    bet_ratio = random.uniform(0.6, 0.8)  # 翻牌后更谨慎
+            elif stack_depth < 5:
+                bet_ratio = random.uniform(0.8, 0.9)
+            else:
+                bet_ratio = random.uniform(0.65, 0.85)
+                
         elif hand_strength >= 0.65:  # 中等强牌
-            bet_ratio = random.uniform(0.5, 0.7)
+            if stack_depth > 20:
+                if street == 'preflop':
+                    bet_ratio = random.uniform(0.5, 0.7)
+                else:
+                    bet_ratio = random.uniform(0.4, 0.6)  # 深筹码时更保守
+            elif stack_depth < 5:
+                bet_ratio = random.uniform(0.6, 0.8)  # 浅筹码时可以更大
+            else:
+                bet_ratio = random.uniform(0.5, 0.7)
+                
         elif hand_strength >= 0.5:  # 中等牌
-            bet_ratio = random.uniform(0.4, 0.6)
-        else:  # 边缘牌
-            bet_ratio = random.uniform(0.3, 0.5)
+            if stack_depth > 20:
+                if street == 'preflop':
+                    bet_ratio = random.uniform(0.4, 0.6)
+                else:
+                    bet_ratio = random.uniform(0.3, 0.5)  # 翻牌后小价值下注
+            elif stack_depth < 5:
+                bet_ratio = random.uniform(0.5, 0.7)  # 浅筹码时可以更大
+            else:
+                bet_ratio = random.uniform(0.4, 0.6)
+                
+        else:  # 边缘牌（半诈唬）
+            if stack_depth > 20:
+                bet_ratio = random.uniform(0.2, 0.4)  # 深筹码时小注诈唬
+            elif stack_depth < 5:
+                bet_ratio = random.uniform(0.4, 0.6)  # 浅筹码时更大诈唬
+            else:
+                bet_ratio = random.uniform(0.3, 0.5)
+        
+        # 根据对手倾向调整下注大小
+        if opponent_tendency > 1.2:  # 对手激进，可以稍微加大下注
+            bet_ratio *= 1.1
+        elif opponent_tendency < 0.9:  # 对手保守，可以稍微减小下注
+            bet_ratio *= 0.9
+        
+        # 根据位置调整下注大小
+        if position_factor >= 1.1:  # 位置好，可以稍微加大下注
+            bet_ratio *= 1.05
+        elif position_factor <= 0.95:  # 位置差，稍微减小下注
+            bet_ratio *= 0.95
+        
+        # 根据街道调整下注大小
+        if street == 'river':  # 河牌圈，价值下注可以更精确
+            if hand_strength >= 0.8:
+                bet_ratio *= 1.1  # 强牌在河牌可以更大下注
+            else:
+                bet_ratio *= 0.9  # 边缘牌在河牌要谨慎
+        elif street == 'turn':  # 转牌圈，适中下注
+            bet_ratio *= 1.0
+        elif street == 'flop':  # 翻牌圈，可以稍微大一些
+            if hand_strength >= 0.7:
+                bet_ratio *= 1.05
+        
+        # 确保下注比例在合理范围内
+        bet_ratio = max(0.2, min(1.0, bet_ratio))  # 限制在20%-100%之间
         
         bet_size = int(pot * bet_ratio)
         
-        # 确保在合理范围内
+        # 确保在允许范围内，并添加一些随机性避免过于机械化
         if bet_size < min_raise:
-            return min_raise
+            # 如果必须最小加注，考虑是否值得加注
+            if hand_strength >= 0.6:  # 只有较强的牌才进行最小加注
+                return min_raise
+            else:
+                return 0  # 选择跟注或弃牌
         elif bet_size > max_raise:
             return max_raise
         else:
-            return bet_size
+            # 添加小幅随机性（±10%）让下注看起来更自然
+            random_factor = random.uniform(0.9, 1.1)
+            final_bet = int(bet_size * random_factor)
+            
+            # 确保仍然在范围内
+            final_bet = max(min_raise, min(max_raise, final_bet))
+            
+            # 对于强牌，确保下注足够大以获取价值
+            if hand_strength >= 0.8 and final_bet < pot * 0.5:
+                final_bet = max(final_bet, int(pot * 0.5))
+            
+            # 避免过于机械化的下注金额，使用更自然的数字
+            if final_bet > 100:
+                # 让下注金额更自然（比如195而不是200，385而不是400）
+                remainder = final_bet % 50
+                if remainder < 15:
+                    final_bet -= remainder
+                elif remainder > 35:
+                    final_bet += (50 - remainder)
+            
+            return final_bet
+    
+    def _evaluate_actual_hand_strength(self, hole_card, community_card):
+        """评估实际牌力（考虑公共牌后的真实强度）"""
+        if not hole_card or len(hole_card) < 2 or not community_card or len(community_card) < 3:
+            return self._evaluate_hand_simple(hole_card, community_card)
+        
+        # 合并所有牌
+        all_cards = hole_card + community_card
+        
+        # 评估实际牌力
+        actual_strength = self._assess_hand_strength(all_cards)
+        
+        return actual_strength
+    
+    def _assess_hand_strength(self, all_cards):
+        """评估手牌强度（基于所有牌）"""
+        if len(all_cards) < 5:
+            return self._evaluate_hand_simple(all_cards[:2], all_cards[2:])
+        
+        # 提取点数和花色
+        ranks = {'2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, 
+                '9': 9, 'T': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14}
+        
+        card_ranks = []
+        card_suits = []
+        
+        for card in all_cards:
+            rank = card[1]
+            suit = card[0]
+            card_ranks.append(ranks.get(rank, 0))
+            card_suits.append(suit)
+        
+        # 统计每个点数和花色的数量
+        rank_counts = {}
+        suit_counts = {}
+        
+        for rank in card_ranks:
+            rank_counts[rank] = rank_counts.get(rank, 0) + 1
+        
+        for suit in card_suits:
+            suit_counts[suit] = suit_counts.get(suit, 0) + 1
+        
+        # 评估牌力
+        strength = 0.0
+        
+        # 1. 检查同花
+        max_suit_count = max(suit_counts.values()) if suit_counts else 0
+        if max_suit_count >= 5:
+            strength = 0.8  # 同花
+        elif max_suit_count == 4:
+            strength = 0.3  # 4张同花
+        elif max_suit_count == 3:
+            strength = 0.1  # 3张同花
+        
+        # 2. 检查顺子可能性
+        unique_ranks = sorted(set(card_ranks))
+        straight_potential = 0
+        
+        for i in range(len(unique_ranks) - 2):
+            if unique_ranks[i+2] - unique_ranks[i] <= 4:
+                straight_potential += 0.1
+        
+        strength += min(0.3, straight_potential)
+        
+        # 3. 检查对子和三条
+        max_rank_count = max(rank_counts.values()) if rank_counts else 0
+        if max_rank_count >= 3:
+            strength = max(strength, 0.7)  # 三条
+        elif max_rank_count == 2:
+            # 计算对子数量
+            pair_count = sum(1 for count in rank_counts.values() if count == 2)
+            if pair_count >= 2:
+                strength = max(strength, 0.6)  # 两对
+            else:
+                strength = max(strength, 0.4)  # 一对
+        
+        # 4. 高牌评估（如果没有其他牌力）
+        if strength < 0.2:
+            # 评估高牌强度
+            high_cards = sorted(card_ranks, reverse=True)[:3]  # 取最高的3张牌
+            avg_high_card = sum(high_cards) / len(high_cards)
+            
+            # 高牌强度（基于平均高牌点数）
+            if avg_high_card >= 12:  # Q以上
+                strength = 0.25
+            elif avg_high_card >= 10:  # T以上
+                strength = 0.2
+            else:
+                strength = 0.15
+        
+        return min(1.0, strength)
     
     def _has_showdown_value(self, hand_strength, round_state):
         """判断是否有摊牌价值"""
