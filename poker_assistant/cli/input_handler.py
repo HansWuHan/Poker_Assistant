@@ -180,9 +180,20 @@ class InputHandler:
                         max_previous_raise = max(max_previous_raise, amount)
                 
                 if max_previous_raise > 0:
-                    required_min = max_previous_raise * 2  # 至少一倍规则
-                    print(f"📏 加注规则: 必须至少为之前最大加注(${max_previous_raise})的一倍")
-                    print(f"📊 理论最小: ${required_min} (实际最小: ${min_raise})")
+                    # 德州扑克加注规则：加注必须等于或高于之前最大加注
+                    # 例如：之前玩家加注到$30，你必须至少加注到$60（再加注$30）
+                    # PyPokerEngine已经正确计算了最小加注额，我们只需要显示规则
+                    print(f"📏 加注规则: 之前玩家加注到${max_previous_raise}")
+                    print(f"📊 你必须至少加注到${min_raise}")
+                    
+                    # 如果可能，显示加注增量信息
+                    if min_raise > max_previous_raise:
+                        raise_increment = min_raise - max_previous_raise
+                        print(f"📊 即：再加注${raise_increment}")
+                else:
+                    # 无人加注的情况，应该基于大盲注
+                    print(f"📏 加注规则: 该圈尚未有玩家加注")
+                    print(f"📊 最小加注: ${min_raise}")
         
         print("💡 提示: 输入 'min' 最小加注, 'max' 全下, 或具体金额")
         

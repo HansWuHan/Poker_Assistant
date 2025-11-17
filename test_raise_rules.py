@@ -83,8 +83,8 @@ def test_raise_rule_display():
                     max_previous_raise = max(max_previous_raise, amount)
             
             if max_previous_raise > 0:
-                required_min = max_previous_raise * 2
-                print(f"📏 加注规则: 必须至少为之前最大加注(${max_previous_raise})的一倍")
+                required_min = max_previous_raise  # 根据德州扑克规则，加注必须等于或高于之前最大加注
+                print(f"📏 加注规则: 必须至少为之前最大加注(${max_previous_raise})")
                 print(f"📊 理论最小: ${required_min} (实际最小: ${min_raise})")
         
         print("💡 提示: 输入 'min' 最小加注, 'max' 全下, 或具体金额")

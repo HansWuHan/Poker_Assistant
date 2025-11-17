@@ -58,6 +58,9 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
             # 添加1秒延时，显示思考中提示
             print("🤔 AI正在思考中...")
             time.sleep(1)
+        else:
+            # 即使关闭思考显示，也添加1秒延时让AI决策更自然
+            time.sleep(1)
         
         # 根据难度选择策略
         if self.difficulty == "easy":
@@ -77,7 +80,7 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         return action, amount
     
     def _generate_thinking_process(self, hole_card, round_state, valid_actions):
-        """生成思考过程"""
+        """生成思考过程 - 增强版，包含对手手牌猜测"""
         street = round_state['street']
         pot = round_state['pot']['main']['amount']
         call_amount = valid_actions[1]['amount']
@@ -106,12 +109,17 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
             odds_desc = f"底池${pot}，需要跟注${call_amount}，赔率{pot_odds:.1%}"
             thinking_steps.append(f"💰 {odds_desc}")
         
-        # 步骤4: 对手分析
+        # 步骤4: 对手分析（增强版）
         opponent_desc = self._analyze_opponents_simple(round_state)
         if opponent_desc:
             thinking_steps.append(f"👥 对手分析: {opponent_desc}")
         
-        # 步骤5: 决策建议
+        # 步骤5: 对手手牌猜测
+        hand_guess = self._guess_opponent_hands(round_state, street)
+        if hand_guess:
+            thinking_steps.append(f"🔍 手牌猜测: {hand_guess}")
+        
+        # 步骤6: 决策建议
         if hand_strength >= 0.7:
             thinking_steps.append("💡 建议: 强牌，考虑价值下注")
         elif hand_strength >= 0.4:
@@ -122,14 +130,14 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         return "\n".join(thinking_steps)
     
     def _display_thinking(self, thinking_text):
-        """显示思考过程"""
+        """显示思考过程 - 增强版"""
         if thinking_text:
             print(f"\n🤖 AI思考过程:")
             print(f"{thinking_text}")
-            print("-" * 40)
+            print("-" * 60)
     
     def _display_decision(self, action, amount, hole_card, round_state):
-        """显示最终决策"""
+        """显示最终决策 - 增强版"""
         action_names = {
             'fold': '🚫 弃牌',
             'call': '✅ 跟注',
@@ -141,7 +149,7 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
             print(f"🎯 最终决策: {action_text} ${amount}")
         else:
             print(f"🎯 最终决策: {action_text}")
-        print("=" * 40)
+        print("=" * 60)
     
     def _describe_hole_cards(self, hole_card):
         """描述手牌"""
@@ -210,14 +218,305 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
             return "靠前位置"
     
     def _analyze_opponents_simple(self, round_state):
-        """简单分析对手"""
+        """增强对手分析 - 结合下注行为，专门分析玩家（你）"""
         seats = round_state['seats']
         active_opponents = sum(1 for seat in seats if seat['stack'] > 0 and seat['uuid'] != self.uuid)
         
         if active_opponents == 0:
             return ""
         
-        return f"{active_opponents}个活跃对手"
+        # 分析对手的下注行为
+        opponent_analysis = self._analyze_opponent_betting_patterns(round_state)
+        
+        # 专门分析玩家（你）的行为
+        player_analysis = self._analyze_player_behavior(round_state)
+        
+        result = f"{active_opponents}个活跃对手{opponent_analysis}"
+        if player_analysis:
+            result += f"\n🎯 玩家分析: {player_analysis}"
+        
+        return result
+    
+    def _analyze_player_behavior(self, round_state):
+        """专门分析玩家（你）的行为模式"""
+        action_histories = round_state.get('action_histories', {})
+        street = round_state['street']
+        
+        if not action_histories or street not in action_histories:
+            return ""
+        
+        # 找到玩家的UUID（通过名称"你"识别）
+        player_uuid = None
+        for seat in round_state['seats']:
+            # 假设玩家名称是"你"
+            if seat.get('name') == '你':
+                player_uuid = seat['uuid']
+                break
+        
+        if not player_uuid or player_uuid == self.uuid:
+            return ""
+        
+        # 收集玩家在所有街道的行为
+        player_actions = []
+        player_total_invested = 0
+        
+        for street_name, actions in action_histories.items():
+            if not isinstance(actions, list):
+                continue
+                
+            for action in actions:
+                if isinstance(action, dict) and 'action' in action and 'uuid' in action:
+                    if action['uuid'] == player_uuid:
+                        action_type = action['action'].lower()
+                        amount = action.get('amount', 0)
+                        
+                        # 排除盲注相关行动
+                        if street_name == 'preflop' and amount <= 20 and action_type in ['call', 'raise']:
+                            continue  # 排除小盲注和补盲注
+                        
+                        player_actions.append({
+                            'street': street_name,
+                            'action': action_type,
+                            'amount': amount
+                        })
+                        player_total_invested += amount
+        
+        if not player_actions:
+            return "暂无有意义行动"
+        
+        # 分析玩家行为模式
+        analysis_parts = []
+        
+        # 统计行为类型
+        aggressive_actions = sum(1 for a in player_actions if a['action'] in ['raise', 'allin'])
+        call_actions = sum(1 for a in player_actions if a['action'] == 'call')
+        fold_actions = sum(1 for a in player_actions if a['action'] == 'fold')
+        total_meaningful_actions = len(player_actions)
+        
+        if total_meaningful_actions == 0:
+            return "暂无有意义行动"
+        
+        # 计算激进度
+        aggression_factor = aggressive_actions / total_meaningful_actions if total_meaningful_actions > 0 else 0
+        
+        # 分析激进度
+        if aggression_factor >= 0.6:
+            analysis_parts.append("激进型")
+        elif aggression_factor >= 0.3:
+            analysis_parts.append("平衡型")
+        else:
+            analysis_parts.append("保守型")
+        
+        # 分析当前街道的行为
+        current_street_actions = [a for a in player_actions if a['street'] == street]
+        if current_street_actions:
+            last_action = current_street_actions[-1]
+            
+            if last_action['action'] == 'raise':
+                if last_action['amount'] >= 100:
+                    analysis_parts.append("当前街道大加注")
+                else:
+                    analysis_parts.append("当前街道加注")
+            elif last_action['action'] == 'call':
+                analysis_parts.append("当前街道跟注")
+            elif last_action['action'] == 'allin':
+                analysis_parts.append("当前街道全押")
+        
+        # 基于行为猜测手牌范围
+        if aggression_factor >= 0.6:  # 激进玩家
+            if player_total_invested >= 200:
+                analysis_parts.append("可能持有强牌或诈唬")
+            else:
+                analysis_parts.append("范围较宽，可能包含诈唬")
+        elif aggression_factor <= 0.2:  # 保守玩家
+            if aggressive_actions > 0:
+                analysis_parts.append("可能持有强牌")
+            else:
+                analysis_parts.append("多为中等强度牌")
+        else:  # 平衡型玩家
+            analysis_parts.append("标准范围")
+        
+        return "，".join(analysis_parts) if analysis_parts else "暂无分析"
+    
+    def _analyze_opponent_betting_patterns(self, round_state):
+        """分析对手下注模式"""
+        action_histories = round_state.get('action_histories', {})
+        street = round_state['street']
+        
+        if not action_histories or street not in action_histories:
+            return ""
+        
+        analysis_parts = []
+        
+        # 分析当前街道的对手行为
+        current_street_actions = action_histories[street]
+        if not isinstance(current_street_actions, list):
+            return ""
+        
+        # 统计对手行为
+        opponent_actions = {}
+        for action in current_street_actions:
+            if isinstance(action, dict) and 'action' in action and 'uuid' in action:
+                uuid = action['uuid']
+                if uuid != self.uuid:  # 只分析对手
+                    if uuid not in opponent_actions:
+                        opponent_actions[uuid] = []
+                    opponent_actions[uuid].append(action['action'].lower())
+        
+        # 分析每个对手的行为模式
+        aggressive_count = 0
+        passive_count = 0
+        total_opponents = len(opponent_actions)
+        
+        for uuid, actions in opponent_actions.items():
+            if not actions:
+                continue
+                
+            # 计算激进程度
+            aggressive_actions = sum(1 for a in actions if a in ['raise', 'allin'])
+            total_actions = len(actions)
+            aggression_rate = aggressive_actions / total_actions
+            
+            if aggression_rate >= 0.5:
+                aggressive_count += 1
+            elif aggression_rate <= 0.2:
+                passive_count += 1
+        
+        # 生成分析结果
+        if aggressive_count > 0:
+            analysis_parts.append(f"{aggressive_count}个激进")
+        if passive_count > 0:
+            analysis_parts.append(f"{passive_count}个保守")
+        
+        if analysis_parts:
+            return "，" + "，".join(analysis_parts)
+        
+        return ""
+    
+    def _guess_opponent_hands(self, round_state, street):
+        """猜测对手手牌范围 - 增强版，排除盲注影响"""
+        action_histories = round_state.get('action_histories', {})
+        community_cards = round_state.get('community_card', [])
+        
+        if not action_histories or street not in action_histories:
+            return ""
+        
+        guesses = []
+        
+        # 分析当前街道的行动
+        current_actions = action_histories[street]
+        if not isinstance(current_actions, list):
+            return ""
+        
+        # 按对手分组分析
+        opponent_actions = {}
+        for action in current_actions:
+            if isinstance(action, dict) and 'action' in action and 'uuid' in action:
+                uuid = action['uuid']
+                if uuid != self.uuid:  # 只分析对手
+                    if uuid not in opponent_actions:
+                        opponent_actions[uuid] = []
+                    opponent_actions[uuid].append(action)
+        
+        # 分析每个对手的手牌范围
+        for uuid, actions in opponent_actions.items():
+            if not actions:
+                continue
+            
+            # 获取对手名字
+            opponent_name = "对手"
+            for seat in round_state['seats']:
+                if seat['uuid'] == uuid:
+                    opponent_name = seat['name']
+                    break
+            
+            # 分析下注模式（排除盲注）
+            meaningful_actions = []
+            total_invested = 0
+            
+            for action in actions:
+                action_type = action['action'].lower()
+                amount = action.get('amount', 0)
+                
+                # 排除盲注相关行动
+                if street == 'preflop' and amount <= 20 and action_type in ['call', 'raise']:
+                    continue  # 排除小盲注和补盲注
+                
+                meaningful_actions.append(action)
+                total_invested += amount
+            
+            if not meaningful_actions:
+                continue
+            
+            # 基于有意义的行动进行猜测
+            has_raise = any(a['action'].lower() == 'raise' for a in meaningful_actions)
+            has_allin = any(a['action'].lower() == 'allin' for a in meaningful_actions)
+            
+            # 根据行为猜测手牌强度
+            if has_allin:
+                guess = "超强牌(AA,KK,AK)"
+            elif has_raise:
+                if total_invested > 100:
+                    guess = "强牌(对子+，AQ+)"
+                else:
+                    guess = "中等牌(对子，KQ)"
+            elif total_invested > 0:
+                guess = "边缘牌(高牌，同花连牌)"
+            else:
+                guess = "弱牌或投机牌"
+            
+            guesses.append(f"{opponent_name}: {guess}")
+        
+        # 分析翻牌前的行动（更重要）
+        if 'preflop' in action_histories and street != 'preflop':
+            preflop_actions = action_histories['preflop']
+            if isinstance(preflop_actions, list):
+                preflop_guesses = []
+                for action in preflop_actions:
+                    if isinstance(action, dict) and 'action' in action and 'uuid' in action:
+                        uuid = action['uuid']
+                        if uuid != self.uuid and uuid not in [g.split(':')[0] for g in guesses]:
+                            action_type = action['action'].lower()
+                            amount = action.get('amount', 0)
+                            
+                            # 排除盲注
+                            if amount <= 20 and action_type in ['call', 'raise']:
+                                continue
+                            
+                            if action_type == 'raise':
+                                if amount >= 100:  # 大加注
+                                    preflop_guesses.append(f"翻牌前大加注: 强牌范围")
+                                else:
+                                    preflop_guesses.append(f"翻牌前加注: 中等强度")
+                
+                if preflop_guesses:
+                    guesses.extend(preflop_guesses[:2])  # 限制数量
+        
+        # 根据公共牌调整猜测
+        if community_cards:
+            board_analysis = self._analyze_board_for_opponent_range(community_cards)
+            if board_analysis:
+                guesses.append(f"牌面分析: {board_analysis}")
+        
+        if guesses:
+            return "；".join(guesses[:3])  # 限制显示数量
+        
+        return ""
+    
+    def _analyze_board_for_opponent_range(self, community_cards):
+        """根据公共牌分析对手可能的手牌范围"""
+        if len(community_cards) < 3:
+            return ""
+        
+        # 评估牌面协调性
+        coordination = self._assess_board_coordination(community_cards)
+        
+        if coordination > 0.7:
+            return "协调牌面，对手可能击中强牌"
+        elif coordination < 0.3:
+            return "干燥牌面，对手多为高牌"
+        else:
+            return "中性牌面，对手范围较宽"
     
     def _improved_easy_strategy(self, fold_action, call_action, raise_action, hole_card, round_state):
         """改进的简单策略 - 更精细的决策"""
@@ -515,6 +814,9 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
                     amount = self._calculate_value_bet_size(hand_strength * 0.5, pot, raise_action, round_state)
                     return raise_action['action'], amount
                 return fold_action['action'], fold_action['amount']
+        
+        # 默认返回弃牌（安全保底）
+        return fold_action['action'], fold_action['amount']
     
     def _improved_hard_strategy(self, fold_action, call_action, raise_action, hole_card, round_state):
         """改进的困难策略 - 最智能的决策"""
@@ -785,7 +1087,7 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
             return 0.95  # 靠前位置
     
     def _analyze_opponent_tendency(self, round_state):
-        """分析对手倾向（更智能）"""
+        """分析对手倾向（更智能）- 排除盲注影响"""
         action_histories = round_state.get('action_histories', {})
         
         total_actions = 0
@@ -794,14 +1096,20 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         fold_actions = 0
         
         # 分析所有街道的行动
-        for street_actions in action_histories.values():
+        for street, street_actions in action_histories.items():
             if isinstance(street_actions, list):
                 for action in street_actions:
                     if isinstance(action, dict) and 'action' in action:
                         # 只统计其他玩家的行动
                         if action.get('uuid') != self.uuid:
-                            total_actions += 1
                             action_type = action['action'].lower()
+                            amount = action.get('amount', 0)
+                            
+                            # 排除盲注相关行动
+                            if street == 'preflop' and amount <= 20 and action_type in ['call', 'raise']:
+                                continue  # 排除小盲注和补盲注
+                            
+                            total_actions += 1
                             
                             if action_type in ['raise', 'allin']:
                                 aggressive_actions += 1
