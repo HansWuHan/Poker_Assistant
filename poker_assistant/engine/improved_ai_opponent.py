@@ -90,13 +90,15 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         
         thinking_steps = []
         
-        # 步骤1: 手牌评估
+        # 步骤1: 手牌评估（显示当前AI自己的手牌，像玩家手牌一样渲染）
         if street == 'preflop':
             card_desc = self._describe_hole_cards(hole_card)
-            thinking_steps.append(f"🎯 手牌评估: {card_desc}")
+            formatted_cards = self._format_hole_cards_display(hole_card)
+            thinking_steps.append(f"🎯 我的手牌: {formatted_cards} ({card_desc})")
         else:
             hand_desc = self._describe_hand_strength(hand_strength, hole_card, round_state.get('community_card', []))
-            thinking_steps.append(f"🎯 牌力评估: {hand_desc}")
+            formatted_cards = self._format_hole_cards_display(hole_card)
+            thinking_steps.append(f"🎯 我的牌力: {hand_desc} {formatted_cards}")
         
         # 步骤2: 位置分析
         position = self._get_my_position(round_state)
@@ -128,6 +130,30 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
             thinking_steps.append("💡 建议: 弱牌，考虑弃牌")
         
         return "\n".join(thinking_steps)
+    
+    def _format_hole_cards_display(self, hole_card):
+        """格式化手牌显示，像玩家手牌一样渲染"""
+        if not hole_card or len(hole_card) < 2:
+            return ""
+        
+        # 导入卡片工具函数
+        try:
+            from poker_assistant.utils.card_utils import format_card, get_card_color
+            
+            # 格式化两张牌
+            card1 = format_card(hole_card[0])
+            card2 = format_card(hole_card[1])
+            
+            # 获取颜色
+            color1 = get_card_color(hole_card[0])
+            color2 = get_card_color(hole_card[1])
+            
+            # 创建格式化字符串（使用Unicode符号）
+            return f"{card1} {card2}"
+            
+        except ImportError:
+            # 如果无法导入，使用简单格式
+            return f"{hole_card[0]} {hole_card[1]}"
     
     def _display_thinking(self, thinking_text):
         """显示思考过程 - 增强版"""
