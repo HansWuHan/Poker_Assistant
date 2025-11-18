@@ -50,14 +50,24 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         
         # 生成思考过程（如果开启显示）
         if self.show_thinking:
+            # 先输出空行和AI玩家名字+思考中
+            print()
+            # 获取AI玩家名字
+            ai_name = "AI"
+            for seat in round_state.get('seats', []):
+                if seat.get('uuid') == self.uuid:
+                    ai_name = seat.get('name', 'AI')
+                    break
+            print(f"🤖 {ai_name} 思考中...")
+            
+            # 等待2秒
+            time.sleep(2)
+            
+            # 输出思考内容
             thinking_process = self._generate_thinking_process(
                 hole_card, round_state, valid_actions
             )
             self._display_thinking(thinking_process)
-            
-            # 添加1秒延时，显示思考中提示
-            print("🤔 AI正在思考中...")
-            time.sleep(1)
         else:
             # 即使关闭思考显示，也添加1秒延时让AI决策更自然
             time.sleep(1)
@@ -73,10 +83,6 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
             action, amount = self._improved_medium_strategy(fold_action, call_action, raise_action,
                                                            hole_card, round_state)
         
-        # 显示最终决策（如果开启显示）
-        if self.show_thinking:
-            self._display_decision(action, amount, hole_card, round_state)
-        
         return action, amount
     
     def _generate_thinking_process(self, hole_card, round_state, valid_actions):
@@ -90,46 +96,61 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         
         thinking_steps = []
         
-        # 步骤1: 手牌评估（显示当前AI自己的手牌，像玩家手牌一样渲染）
+        # 精简版思考过程
         if street == 'preflop':
             card_desc = self._describe_hole_cards(hole_card)
             formatted_cards = self._format_hole_cards_display(hole_card)
-            thinking_steps.append(f"🎯 我的手牌: {formatted_cards} ({card_desc})")
+            position = self._get_my_position(round_state)
+            position_desc = self._describe_position(position, len([p for p in round_state['seats'] if p['stack'] > 0]))
+            thinking_steps.append(f"🎯 {formatted_cards} ({card_desc}) - {position_desc}")
         else:
             hand_desc = self._describe_hand_strength(hand_strength, hole_card, round_state.get('community_card', []))
             formatted_cards = self._format_hole_cards_display(hole_card)
-            thinking_steps.append(f"🎯 我的牌力: {hand_desc} {formatted_cards}")
+            thinking_steps.append(f"🎯 {hand_desc} {formatted_cards}")
         
-        # 步骤2: 位置分析
-        position = self._get_my_position(round_state)
-        position_desc = self._describe_position(position, len([p for p in round_state['seats'] if p['stack'] > 0]))
-        thinking_steps.append(f"📍 位置分析: {position_desc}")
-        
-        # 步骤3: 底池赔率
+        # 底池信息（只在有跟注时显示）
         if call_amount > 0 and pot > 0:
             pot_odds = call_amount / (pot + call_amount)
-            odds_desc = f"底池${pot}，需要跟注${call_amount}，赔率{pot_odds:.1%}"
-            thinking_steps.append(f"💰 {odds_desc}")
+            thinking_steps.append(f"💰 底池${pot}，跟注${call_amount}，赔率{pot_odds:.1%}")
         
-        # 步骤4: 对手分析（增强版）
-        opponent_desc = self._analyze_opponents_simple(round_state)
-        if opponent_desc:
-            thinking_steps.append(f"👥 对手分析: {opponent_desc}")
+        # 对手手牌猜测（简化版）
+        active_opponents = self._get_active_opponents(round_state)
+        if active_opponents > 0:
+            hand_guess = self._guess_opponent_hands(round_state, street)
+            if hand_guess:
+                thinking_steps.append(f"🔍 {hand_guess}")
         
-        # 步骤5: 对手手牌猜测
-        hand_guess = self._guess_opponent_hands(round_state, street)
-        if hand_guess:
-            thinking_steps.append(f"🔍 手牌猜测: {hand_guess}")
-        
-        # 步骤6: 决策建议
+        # 决策建议
         if hand_strength >= 0.7:
-            thinking_steps.append("💡 建议: 强牌，考虑价值下注")
+            thinking_steps.append("💡 强牌，考虑价值下注")
         elif hand_strength >= 0.4:
-            thinking_steps.append("💡 建议: 中等牌力，谨慎行动")
+            thinking_steps.append("💡 中等牌力，谨慎行动")
         else:
-            thinking_steps.append("💡 建议: 弱牌，考虑弃牌")
+            thinking_steps.append("💡 弱牌，考虑弃牌")
         
         return "\n".join(thinking_steps)
+    
+    def _format_action(self, action, amount):
+        """格式化行动显示"""
+        action_names = {
+            'fold': '🚫 弃牌',
+            'call': '✅ 跟注',
+            'raise': '📈 加注'
+        }
+        
+        action_text = action_names.get(action, action)
+        if amount > 0:
+            return f"{action_text} ${amount}"
+        else:
+            return action_text
+    
+    def _get_active_opponents(self, round_state):
+        """获取活跃对手数量（排除已弃牌玩家）"""
+        seats = round_state.get('seats', [])
+        return sum(1 for seat in seats 
+                   if seat.get('stack', 0) > 0 
+                   and seat.get('uuid') != self.uuid 
+                   and seat.get('state', 'participating') == 'participating')
     
     def _format_hole_cards_display(self, hole_card):
         """格式化手牌显示，像玩家手牌一样渲染"""
@@ -156,14 +177,12 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
             return f"{hole_card[0]} {hole_card[1]}"
     
     def _display_thinking(self, thinking_text):
-        """显示思考过程 - 增强版"""
+        """显示思考过程 - 精简版"""
         if thinking_text:
-            print(f"\n🤖 AI思考过程:")
             print(f"{thinking_text}")
-            print("-" * 60)
     
     def _display_decision(self, action, amount, hole_card, round_state):
-        """显示最终决策 - 增强版"""
+        """显示最终决策 - 精简版"""
         action_names = {
             'fold': '🚫 弃牌',
             'call': '✅ 跟注',
@@ -172,10 +191,9 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         
         action_text = action_names.get(action, action)
         if amount > 0:
-            print(f"🎯 最终决策: {action_text} ${amount}")
+            print(f"🎯 {action_text} ${amount}")
         else:
-            print(f"🎯 最终决策: {action_text}")
-        print("=" * 60)
+            print(f"🎯 {action_text}")
     
     def _describe_hole_cards(self, hole_card):
         """描述手牌"""
@@ -244,17 +262,21 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
             return "靠前位置"
     
     def _analyze_opponents_simple(self, round_state):
-        """增强对手分析 - 结合下注行为，专门分析玩家（你）"""
-        seats = round_state['seats']
-        active_opponents = sum(1 for seat in seats if seat['stack'] > 0 and seat['uuid'] != self.uuid)
+        """简化对手分析 - 只分析活跃玩家"""
+        # 获取活跃对手数量
+        active_opponents = self._get_active_opponents(round_state)
         
         if active_opponents == 0:
             return ""
         
-        # 分析对手的下注行为
+        # 如果只有1个活跃对手，简化分析
+        if active_opponents == 1:
+            return "1个活跃对手"
+        
+        # 分析活跃对手的下注行为
         opponent_analysis = self._analyze_opponent_betting_patterns(round_state)
         
-        # 专门分析玩家（你）的行为
+        # 专门分析玩家（你）的行为（只分析活跃玩家）
         player_analysis = self._analyze_player_behavior(round_state)
         
         result = f"{active_opponents}个活跃对手{opponent_analysis}"
@@ -379,12 +401,17 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         if not isinstance(current_street_actions, list):
             return ""
         
-        # 统计对手行为
+        # 获取活跃对手（未弃牌的玩家）
+        seats = round_state.get('seats', [])
+        active_uuids = {seat['uuid'] for seat in seats if seat.get('state', 'participating') == 'participating' and seat['uuid'] != self.uuid}
+        
+        # 统计对手行为（只统计活跃玩家）
         opponent_actions = {}
         for action in current_street_actions:
             if isinstance(action, dict) and 'action' in action and 'uuid' in action:
                 uuid = action['uuid']
-                if uuid != self.uuid:  # 只分析对手
+                # 只分析活跃的对手
+                if uuid != self.uuid and uuid in active_uuids:
                     if uuid not in opponent_actions:
                         opponent_actions[uuid] = []
                     opponent_actions[uuid].append(action['action'].lower())
@@ -444,9 +471,17 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
                         opponent_actions[uuid] = []
                     opponent_actions[uuid].append(action)
         
-        # 分析每个对手的手牌范围
+        # 获取活跃对手（未弃牌的玩家）
+        seats = round_state.get('seats', [])
+        active_uuids = {seat['uuid'] for seat in seats if seat.get('state', 'participating') == 'participating' and seat['uuid'] != self.uuid}
+        
+        # 分析每个对手的手牌范围（只分析活跃玩家）
         for uuid, actions in opponent_actions.items():
             if not actions:
+                continue
+            
+            # 跳过已弃牌的玩家
+            if uuid not in active_uuids:
                 continue
             
             # 获取对手名字
