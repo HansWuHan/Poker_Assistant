@@ -190,8 +190,8 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
             pot_odds = call_amount / (pot + call_amount)
             pot_info = f"💰 底池${pot}，跟注${call_amount}，赔率{pot_odds:.1%}"
             
-            # 在赔率行末尾添加尺度建议
-            if gto_sizing_info:
+            # 只在非fold决策时添加尺度建议
+            if gto_sizing_info and gto_decision != 'fold':
                 pot_info += f" | {gto_sizing_info}"
             
             thinking_steps.append(pot_info)

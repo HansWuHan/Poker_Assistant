@@ -504,7 +504,7 @@ class GTOCore:
         else:
             frequencies = {'fold': 0.7, 'call': 0.3}
         
-        # 根据频率选择行动
+        # 根据频率选择行动（保持纯GTO随机性）
         import random
         rand = random.random()
         cumulative = 0.0
@@ -517,6 +517,38 @@ class GTOCore:
         # 默认返回最后一个行动
         last_action = list(frequencies.keys())[-1]
         return self._create_gto_action_by_frequency(last_action, situation, frequencies[last_action], hand_string)
+    
+    # 该方法已撤回 - 保持纯GTO随机性
+    # def _enhance_decision_consistency(self, frequencies: Dict[str, float]) -> Dict[str, float]:
+    #     """增强决策一致性：让AI更倾向于选择高概率行动"""
+    #     # 如果某个行动概率过低（<20%），适当降低其权重
+    #     # 同时保持长期统计的GTO特性
+    #     
+    #     enhanced = frequencies.copy()
+    #     
+    #     # 找到最高概率的行动
+    #     max_action = max(frequencies.items(), key=lambda x: x[1])
+    #     max_prob = max_action[1]
+    #     
+    #     # 如果最高概率>60%，进一步增强它
+    #     if max_prob > 0.6:
+    #         # 增强最高概率行动10%
+    #         enhancement = 0.1
+    #         enhanced[max_action[0]] = min(0.95, max_prob + enhancement)
+    #         
+    #         # 相应减少其他行动的概率
+    #         other_actions = [k for k in enhanced.keys() if k != max_action[0]]
+    #         if other_actions:
+    #             reduction = enhancement / len(other_actions)
+    #             for action in other_actions:
+    #                 enhanced[action] = max(0.01, enhanced[action] - reduction)
+    #     
+    #     # 重新标准化
+    #     total = sum(enhanced.values())
+    #     if total > 0:
+    #         enhanced = {k: v/total for k, v in enhanced.items()}
+    #     
+    #     return enhanced
     
     def _create_gto_action_by_frequency(self, action: str, situation: GTOSituation, frequency: float, hand_string: str) -> GTOAction:
         """根据频率创建GTO行动"""
