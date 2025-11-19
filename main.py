@@ -37,6 +37,7 @@ def main():
     # AI 功能状态
     ai_config = config.get_ai_config()
     print(f"\n🤖 AI 功能状态:")
+    print(f"  AI思考显示: {'✅ 开启' if ai_config['show_thinking'] else '🔴 关闭'}")
     print(f"  策略建议: {'🔴 未启用 (Phase 2)' if not ai_config['auto_show_advice'] else '✅ 启用'}")
     print(f"  对手分析: {'🔴 未启用 (Phase 2)' if not ai_config['enable_opponent_analysis'] else '✅ 启用'}")
     print(f"  牌面分析: {'🔴 未启用 (Phase 2)' if not ai_config['enable_board_analysis'] else '✅ 启用'}")

@@ -49,6 +49,7 @@ class Config:
         self.AI_ENABLE_BOARD_ANALYSIS = os.getenv("AI_ENABLE_BOARD_ANALYSIS", "true").lower() == "true"
         self.AI_ENABLE_REVIEW = os.getenv("AI_ENABLE_REVIEW", "true").lower() == "true"
         self.AI_ENABLE_CHAT = os.getenv("AI_ENABLE_CHAT", "true").lower() == "true"
+        self.AI_SHOW_THINKING = os.getenv("AI_SHOW_THINKING", "true").lower() == "true"
         
         # LLM 配置
         self.LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-chat")
@@ -81,6 +82,7 @@ class Config:
             "enable_board_analysis": self.AI_ENABLE_BOARD_ANALYSIS,
             "enable_review": self.AI_ENABLE_REVIEW,
             "enable_chat": self.AI_ENABLE_CHAT,
+            "show_thinking": self.AI_SHOW_THINKING,
         }
     
     def get_llm_config(self) -> Dict[str, Any]:

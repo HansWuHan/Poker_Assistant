@@ -462,29 +462,105 @@ class GTOCore:
             )
     
     def _calculate_vs_raise_action(self, situation: GTOSituation, position_range: Dict, hand_string: str) -> GTOAction:
-        """计算面对加注的行动"""
+        """计算面对加注的行动 - 使用频率基础决策"""
+        # 获取防守范围
         defend_range = position_range.get('defend', position_range.get('call_3bet', []))
         
+        # 评估手牌强度
+        hand_strength = self._evaluate_hand_strength(situation.hole_cards, situation.community_cards)
+        
+        # 评估位置优势
+        position_advantage = self._evaluate_position_advantage(situation.position)
+        
+        # 基础频率（根据是否在防守范围内调整）
         if hand_string in defend_range:
-            # 在防守范围内，跟注
-            return GTOAction(
-                action='call',
-                amount=situation.pot_size,  # 简化处理
-                frequency=1.0,
-                reasoning=f"{situation.position}位置防守，手牌{hand_string}在防守范围内",
-                range_category='defend',
-                exploit_adjustment=1.0
-            )
+            # 在防守范围内，主要跟注
+            base_frequencies = {'fold': 0.15, 'call': 0.70, 'raise': 0.15}
         else:
-            # 不在范围内，弃牌
+            # 不在范围内，主要弃牌但保留诈唬
+            base_frequencies = {'fold': 0.75, 'call': 0.20, 'raise': 0.05}
+        
+        # 根据手牌强度调整
+        if hand_strength >= 0.7:
+            # 强牌，更积极的防守
+            base_frequencies['call'] += 0.15
+            base_frequencies['fold'] -= 0.15
+        elif hand_strength >= 0.5:
+            # 中等牌力，标准防守
+            pass  # 保持基础频率
+        else:
+            # 弱牌，更保守
+            base_frequencies['fold'] += 0.10
+            base_frequencies['call'] -= 0.10
+        
+        # 根据位置调整
+        base_frequencies['raise'] *= (0.8 + 0.4 * position_advantage)
+        base_frequencies['fold'] *= (1.2 - 0.4 * position_advantage)
+        
+        # 标准化频率
+        total = sum(base_frequencies.values())
+        if total > 0:
+            frequencies = {k: v/total for k, v in base_frequencies.items()}
+        else:
+            frequencies = {'fold': 0.7, 'call': 0.3}
+        
+        # 根据频率选择行动
+        import random
+        rand = random.random()
+        cumulative = 0.0
+        
+        for action, frequency in frequencies.items():
+            cumulative += frequency
+            if rand <= cumulative:
+                return self._create_gto_action_by_frequency(action, situation, frequency, hand_string)
+        
+        # 默认返回最后一个行动
+        last_action = list(frequencies.keys())[-1]
+        return self._create_gto_action_by_frequency(last_action, situation, frequencies[last_action], hand_string)
+    
+    def _create_gto_action_by_frequency(self, action: str, situation: GTOSituation, frequency: float, hand_string: str) -> GTOAction:
+        """根据频率创建GTO行动"""
+        if action == 'fold':
             return GTOAction(
                 action='fold',
                 amount=0,
-                frequency=1.0,
-                reasoning=f"{situation.position}位置防守，手牌{hand_string}不在防守范围内",
+                frequency=frequency,
+                reasoning=f"GTO策略：基于频率分析，{action}是最优选择（手牌{hand_string}）",
                 range_category='fold',
                 exploit_adjustment=1.0
             )
+        elif action == 'call':
+            return GTOAction(
+                action='call',
+                amount=situation.pot_size,  # 简化处理
+                frequency=frequency,
+                reasoning=f"GTO策略：基于频率分析，{action}是最优选择（手牌{hand_string}）",
+                range_category='defend',
+                exploit_adjustment=1.0
+            )
+        elif action == 'raise':
+            # 计算下注尺度
+            sizing = self._calculate_optimal_sizing(situation)
+            amount = int(situation.pot_size * sizing)
+            
+            return GTOAction(
+                action='raise',
+                amount=amount,
+                frequency=frequency,
+                reasoning=f"GTO策略：基于频率分析，{action}是最优选择，尺度{sizing:.2f}底池（手牌{hand_string}）",
+                range_category='value' if frequency > 0.5 else 'bluff',
+                exploit_adjustment=1.0
+            )
+        
+        # 默认返回弃牌
+        return GTOAction(
+            action='fold',
+            amount=0,
+            frequency=1.0,
+            reasoning=f"GTO策略：默认{action}（手牌{hand_string}）",
+            range_category='fold',
+            exploit_adjustment=1.0
+        )
     
     def _calculate_vs_3bet_action(self, situation: GTOSituation, position_range: Dict, hand_string: str) -> GTOAction:
         """计算面对3bet的行动"""

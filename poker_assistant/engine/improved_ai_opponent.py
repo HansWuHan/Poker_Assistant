@@ -144,18 +144,43 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         
         # GTO策略分析（优先显示，作为决策依据）
         gto_decision = None
+        gto_sizing_info = None
         if self.gto_enabled and self.gto_advisor:
             try:
                 gto_analysis = self._get_gto_analysis(hole_card, round_state, valid_actions)
                 if gto_analysis:
-                    thinking_steps.append(f"🧠 {gto_analysis}")
-                    
                     # 获取GTO决策用于最终建议
                     gto_result = self._get_raw_gto_result(hole_card, round_state, valid_actions)
                     if gto_result:
                         gto_decision = gto_result.get('action', '')
                         gto_amount = gto_result.get('amount', 0)
                         gto_confidence = gto_result.get('confidence', 0)
+                        
+                        # 提取频率分布信息
+                        frequencies = gto_result.get('frequencies', {})
+                        sizing_rec = gto_result.get('sizing_recommendation', {})
+                        
+                        # 构建GTO分析字符串，频率分布单独一行
+                        gto_info = f"🧠 GTO策略: {gto_decision} ${gto_amount} (置信度: {gto_confidence:.0%})"
+                        
+                        # 添加频率分布（新行显示）
+                        if frequencies:
+                            freq_parts = []
+                            for action, freq in frequencies.items():
+                                if freq > 0.01:  # 只显示大于1%的频率
+                                    bar_length = int(freq * 20)  # 20个字符的进度条
+                                    bar = "█" * bar_length + "░" * (20 - bar_length)
+                                    freq_parts.append(f"{action}: {freq:.0%} [{bar}]")
+                            if freq_parts:
+                                gto_info += f"\n📊 频率分布: {' | '.join(freq_parts)}"
+                        
+                        # 添加尺度建议信息（稍后会在赔率行显示）
+                        if sizing_rec and isinstance(sizing_rec, dict):
+                            optimal_sizing = sizing_rec.get('optimal_sizing', 0)
+                            if optimal_sizing > 0:
+                                gto_sizing_info = f"💰 尺度建议: {optimal_sizing:.0%} 底池"
+                        
+                        thinking_steps.append(f"{gto_info}")
             except Exception as e:
                 # GTO分析失败时仍显示基础信息，但不作为决策依据
                 pass
@@ -163,7 +188,13 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         # 底池信息（只在有跟注时显示）
         if call_amount > 0 and pot > 0:
             pot_odds = call_amount / (pot + call_amount)
-            thinking_steps.append(f"💰 底池${pot}，跟注${call_amount}，赔率{pot_odds:.1%}")
+            pot_info = f"💰 底池${pot}，跟注${call_amount}，赔率{pot_odds:.1%}"
+            
+            # 在赔率行末尾添加尺度建议
+            if gto_sizing_info:
+                pot_info += f" | {gto_sizing_info}"
+            
+            thinking_steps.append(pot_info)
         
         # 对手手牌猜测（仅针对人类玩家）
         active_opponents = self._get_active_opponents(round_state)
