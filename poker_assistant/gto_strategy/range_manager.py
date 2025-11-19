@@ -397,6 +397,34 @@ class RangeManager:
             'range_size': len(range_set)
         }
     
+    def get_preflop_range(self, position: str, action: str) -> Set[str]:
+        """
+        获取翻牌前范围（向后兼容）
+        
+        Args:
+            position: 位置
+            action: 行动
+            
+        Returns:
+            手牌范围集合
+        """
+        return self.get_range_for_situation(position, action, 'preflop')
+    
+    def is_hand_in_range_by_position(self, hand: str, position: str, action: str) -> bool:
+        """
+        检查手牌是否在特定位置的行动范围内
+        
+        Args:
+            hand: 手牌
+            position: 位置
+            action: 行动
+            
+        Returns:
+            是否在范围内
+        """
+        range_set = self.get_range_for_situation(position, action, 'preflop')
+        return self.is_hand_in_range(hand, range_set)
+    
     def calculate_range_vs_range_equity(self, hero_range: Set[str], villain_range: Set[str]) -> float:
         """
         计算范围对范围的胜率

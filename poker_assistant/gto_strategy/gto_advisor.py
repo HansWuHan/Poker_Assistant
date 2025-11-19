@@ -6,6 +6,7 @@ from .gto_core import GTOCore, GTOSituation, GTOAction
 from .range_manager import RangeManager
 from .sizing_optimizer import SizingOptimizer, SizingContext
 from .frequency_calculator import FrequencyCalculator, FrequencyContext
+from .types import GTOContext, GTOResult, FrequencyResult, SizingRecommendation
 
 
 class GTOAdvisor:
@@ -51,7 +52,7 @@ class GTOAdvisor:
                       opponent_actions: List[Dict],
                       active_opponents: List[str]) -> Dict[str, Any]:
         """
-        获取GTO策略建议
+        获取GTO策略建议（向后兼容方法）
         
         Args:
             hole_cards: 手牌
@@ -69,8 +70,8 @@ class GTOAdvisor:
             GTO建议字典
         """
         try:
-            # 创建GTO情境
-            gto_situation = GTOSituation(
+            # 使用新的类型系统
+            context = GTOContext(
                 street=street,
                 position=position,
                 stack_size=stack_size,
@@ -78,68 +79,112 @@ class GTOAdvisor:
                 community_cards=community_cards,
                 hole_cards=hole_cards,
                 opponent_actions=opponent_actions,
-                active_opponents=len(active_opponents)
+                active_opponents=len(active_opponents),
+                call_amount=call_amount,
+                valid_actions=valid_actions
             )
             
-            # 计算GTO行动
-            gto_action = self.gto_core.calculate_gto_action(gto_situation)
+            # 使用新的GTO计算方法
+            gto_result = self.gto_core.calculate_gto_action_new(context)
             
-            # 计算频率分析
-            freq_context = FrequencyContext(
-                street=street,
-                position=position,
-                hand_strength=self._estimate_hand_strength(hole_cards, community_cards),
-                board_texture=self._evaluate_board_texture(community_cards),
-                pot_size=pot_size,
-                stack_size=stack_size,
-                opponent_tendency=self._estimate_opponent_tendency(opponent_actions),
-                previous_action=self._get_previous_action(opponent_actions),
-                is_ip=self._has_position_advantage(position),
-                num_opponents=len(active_opponents)
-            )
-            
-            frequencies = self.frequency_calculator.calculate_optimal_frequencies(freq_context)
-            
-            # 计算尺度优化
-            sizing_context = SizingContext(
-                street=street,
-                position=position,
-                pot_size=pot_size,
-                stack_size=stack_size,
-                effective_stack=min(stack_size, stack_size - call_amount),
-                board_texture=self._evaluate_board_texture(community_cards),
-                hand_strength=self._estimate_hand_strength(hole_cards, community_cards),
-                opponent_tendency=self._estimate_opponent_tendency(opponent_actions),
-                is_ip=self._has_position_advantage(position),
-                previous_action=self._get_previous_action(opponent_actions)
-            )
-            
-            # 创建综合建议
-            advice = {
-                'action': gto_action.action,
-                'amount': gto_action.amount,
-                'confidence': self._calculate_confidence(gto_action, frequencies),
-                'reasoning': self._build_gto_reasoning(gto_action, frequencies, gto_situation),
-                'gto_explanation': gto_action.reasoning,
-                'frequencies': frequencies,
-                'sizing_recommendation': self._get_sizing_recommendation(sizing_context, gto_action.action),
-                'range_analysis': self._analyze_range_fit(hole_cards, position, street),
-                'balance_metrics': self._calculate_balance_metrics(),
-                'exploit_opportunities': self._identify_exploit_opportunities(opponent_actions)
+            # 转换为旧的返回格式以保持兼容性
+            return {
+                'action': gto_result.action,
+                'amount': gto_result.amount,
+                'confidence': gto_result.confidence,
+                'reasoning': gto_result.reasoning,
+                'gto_explanation': gto_result.gto_explanation,
+                'frequencies': gto_result.frequencies,
+                'sizing_recommendation': {
+                    'optimal_sizing': gto_result.sizing_recommendation.optimal_sizing,
+                    'explanation': gto_result.sizing_recommendation.explanation,
+                    'min_sizing': gto_result.sizing_recommendation.min_sizing,
+                    'max_sizing': gto_result.sizing_recommendation.max_sizing
+                },
+                'range_analysis': gto_result.range_analysis,
+                'balance_metrics': gto_result.balance_metrics,
+                'exploit_opportunities': gto_result.exploit_opportunities
             }
             
-            # 记录历史
-            self.gto_history.append({
-                'situation': gto_situation,
-                'action': gto_action,
-                'frequencies': frequencies
-            })
-            
-            return advice
-            
         except Exception as e:
-            # 降级处理
-            return self._fallback_gto_advice(e, hole_cards, position, street)
+            # 回退到旧的GTO逻辑
+            return self._get_gto_advice_legacy(
+                hole_cards, community_cards, street, position, pot_size, stack_size,
+                call_amount, valid_actions, opponent_actions, active_opponents
+            )
+    
+    def _get_gto_advice_legacy(self, hole_cards: List[str], community_cards: List[str], 
+                               street: str, position: str, pot_size: int, stack_size: int,
+                               call_amount: int, valid_actions: List[Dict], 
+                               opponent_actions: List[Dict], active_opponents: List[str]) -> Dict[str, Any]:
+        """旧的GTO建议方法（向后兼容）"""
+        # 创建GTO情境
+        gto_situation = GTOSituation(
+            street=street,
+            position=position,
+            stack_size=stack_size,
+            pot_size=pot_size,
+            community_cards=community_cards,
+            hole_cards=hole_cards,
+            opponent_actions=opponent_actions,
+            active_opponents=len(active_opponents)
+        )
+        
+        # 计算GTO行动
+        gto_action = self.gto_core.calculate_gto_action(gto_situation)
+        
+        # 计算频率分析
+        freq_context = FrequencyContext(
+            street=street,
+            position=position,
+            hand_strength=self._estimate_hand_strength(hole_cards, community_cards),
+            board_texture=self._evaluate_board_texture(community_cards),
+            pot_size=pot_size,
+            stack_size=stack_size,
+            opponent_tendency=self._estimate_opponent_tendency(opponent_actions),
+            previous_action=self._get_previous_action(opponent_actions),
+            is_ip=self._has_position_advantage(position),
+            num_opponents=len(active_opponents)
+        )
+        
+        frequencies = self.frequency_calculator.calculate_optimal_frequencies(freq_context)
+        
+        # 计算尺度优化
+        sizing_context = SizingContext(
+            street=street,
+            position=position,
+            pot_size=pot_size,
+            stack_size=stack_size,
+            effective_stack=min(stack_size, stack_size - call_amount),
+            board_texture=self._evaluate_board_texture(community_cards),
+            hand_strength=self._estimate_hand_strength(hole_cards, community_cards),
+            opponent_tendency=self._estimate_opponent_tendency(opponent_actions),
+            is_ip=self._has_position_advantage(position),
+            previous_action=self._get_previous_action(opponent_actions)
+        )
+        
+        # 创建综合建议
+        advice = {
+            'action': gto_action.action,
+            'amount': gto_action.amount,
+            'confidence': self._calculate_confidence(gto_action, frequencies),
+            'reasoning': self._build_gto_reasoning(gto_action, frequencies, gto_situation),
+            'gto_explanation': gto_action.reasoning,
+            'frequencies': frequencies,
+            'sizing_recommendation': self._get_sizing_recommendation(sizing_context, gto_action.action),
+            'range_analysis': self._analyze_range_fit(hole_cards, position, street),
+            'balance_metrics': self._calculate_balance_metrics(),
+            'exploit_opportunities': self._identify_exploit_opportunities(opponent_actions)
+        }
+        
+        # 记录历史
+        self.gto_history.append({
+            'situation': gto_situation,
+            'action': gto_action,
+            'frequencies': frequencies
+        })
+        
+        return advice
     
     def blend_with_exploitative(self, gto_advice: Dict[str, Any], exploitative_advice: Dict[str, Any]) -> Dict[str, Any]:
         """

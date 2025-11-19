@@ -7,10 +7,14 @@ import os
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 
+# 导入类型定义
+from .types import GTOContext, GTOResult, FrequencyResult, SizingRecommendation, ActionType, Position, Street
 
+
+# 为向后兼容保留的旧类型定义
 @dataclass
 class GTOSituation:
-    """GTO情境数据结构"""
+    """GTO情境数据结构（向后兼容）"""
     street: str  # preflop, flop, turn, river
     position: str  # BTN, SB, BB, UTG, MP, CO, HJ
     stack_size: int  # 有效筹码深度
@@ -19,17 +23,42 @@ class GTOSituation:
     hole_cards: List[str]  # 手牌
     opponent_actions: List[Dict]  # 对手行动历史
     active_opponents: int  # 活跃对手数量
+    
+    def to_context(self) -> GTOContext:
+        """转换为新的上下文格式"""
+        return GTOContext(
+            street=self.street,
+            position=self.position,
+            stack_size=self.stack_size,
+            pot_size=self.pot_size,
+            community_cards=self.community_cards,
+            hole_cards=self.hole_cards,
+            opponent_actions=self.opponent_actions,
+            active_opponents=self.active_opponents
+        )
 
 
 @dataclass
 class GTOAction:
-    """GTO行动建议"""
+    """GTO行动建议（向后兼容）"""
     action: str  # fold, call, raise
     amount: int  # 建议金额
     frequency: float  # 执行频率
     reasoning: str  # 决策理由
     range_category: str  # 范围分类
     exploit_adjustment: float  # 剥削调整因子
+    
+    @classmethod
+    def from_result(cls, result: GTOResult) -> 'GTOAction':
+        """从新的结果格式转换"""
+        return cls(
+            action=result.action,
+            amount=result.amount,
+            frequency=result.confidence,
+            reasoning=result.reasoning,
+            range_category=result.range_analysis.get('range_category', 'unknown'),
+            exploit_adjustment=0.0
+        )
 
 
 class GTOCore:
@@ -733,3 +762,191 @@ class GTOCore:
         
         # 转牌和河牌使用标准尺度
         return 0.65  # 2/3底池作为默认值
+    
+    def calculate_gto_action_new(self, context: GTOContext) -> GTOResult:
+        """使用新类型系统的GTO决策方法"""
+        try:
+            # 转换为旧的GTOSituation格式
+            situation = GTOSituation(
+                street=context.street,
+                position=context.position,
+                stack_size=context.stack_size,
+                pot_size=context.pot_size,
+                community_cards=context.community_cards,
+                hole_cards=context.hole_cards,
+                opponent_actions=context.opponent_actions,
+                active_opponents=context.active_opponents
+            )
+            
+            # 使用现有的GTO逻辑
+            gto_action = self.calculate_gto_action(situation)
+            
+            # 转换为新的结果格式
+            frequencies = self._calculate_action_frequencies_new(context)
+            sizing_rec = self._calculate_sizing_recommendation_new(context)
+            
+            return GTOResult(
+                action=gto_action.action,
+                amount=gto_action.amount,
+                confidence=gto_action.frequency,
+                reasoning=gto_action.reasoning,
+                gto_explanation=f"位置: {context.position}; 街道: {context.street}; 筹码深度: {context.stack_size}BB",
+                frequencies=frequencies.action_frequencies,
+                sizing_recommendation=sizing_rec,
+                range_analysis=self._analyze_range_new(context),
+                balance_metrics={'balance_score': 0.5, 'predictability': 0.5, 'exploitability': 0.5},
+                exploit_opportunities=[]
+            )
+            
+        except Exception as e:
+            # 回退到简单的GTO逻辑
+            return self._fallback_gto_result_new(context)
+    
+    def _calculate_action_frequencies_new(self, context: GTOContext) -> FrequencyResult:
+        """计算行动频率（新类型系统）"""
+        # 简化实现，直接计算频率
+        hand_string = self._format_hand(context.hole_cards)
+        hand_strength = self._evaluate_hand_strength(context.hole_cards, context.community_cards)
+        
+        # 基础频率
+        frequencies = {
+            'fold': 0.0,
+            'call': 0.0,
+            'raise': 0.0
+        }
+        
+        # 根据牌力调整
+        if hand_strength >= 0.8:
+            # 超强牌：主要价值下注
+            frequencies['raise'] = 0.85
+            frequencies['call'] = 0.15
+            frequencies['fold'] = 0.0
+        elif hand_strength >= 0.6:
+            # 强牌：价值下注为主
+            frequencies['raise'] = 0.65
+            frequencies['call'] = 0.35
+            frequencies['fold'] = 0.0
+        elif hand_strength >= 0.4:
+            # 中等牌：混合策略
+            frequencies['raise'] = 0.25
+            frequencies['call'] = 0.55
+            frequencies['fold'] = 0.20
+        elif hand_strength >= 0.25:
+            # 边缘牌：防守性跟注或诈唬
+            frequencies['raise'] = 0.15
+            frequencies['call'] = 0.35
+            frequencies['fold'] = 0.50
+        else:
+            # 弱牌：主要弃牌，偶尔诈唬
+            frequencies['raise'] = 0.08
+            frequencies['call'] = 0.12
+            frequencies['fold'] = 0.80
+        
+        # 根据位置调整
+        position_advantage = self._evaluate_position_advantage(context.position)
+        frequencies['raise'] *= (0.8 + 0.4 * position_advantage)
+        frequencies['fold'] *= (1.2 - 0.4 * position_advantage)
+        
+        # 标准化频率
+        total = sum(frequencies.values())
+        if total > 0:
+            frequencies = {k: v/total for k, v in frequencies.items()}
+        
+        return FrequencyResult(
+            action_frequencies=frequencies,
+            mixed_strategy=frequencies,
+            equilibrium_deviation=0.1,
+            confidence_level=0.8
+        )
+    
+    def _calculate_sizing_recommendation_new(self, context: GTOContext) -> SizingRecommendation:
+        """计算下注尺度建议（新类型系统）"""
+        situation = GTOSituation(
+            street=context.street,
+            position=context.position,
+            stack_size=context.stack_size,
+            pot_size=context.pot_size,
+            community_cards=context.community_cards,
+            hole_cards=context.hole_cards,
+            opponent_actions=context.opponent_actions,
+            active_opponents=context.active_opponents
+        )
+        
+        optimal_sizing = self._calculate_optimal_sizing(situation)
+        
+        return SizingRecommendation(
+            optimal_sizing=optimal_sizing,
+            min_sizing=optimal_sizing * 0.8,
+            max_sizing=optimal_sizing * 1.2,
+            explanation=f"基于{context.position}位置和{context.street}街道的最优尺度",
+            sizing_type='value' if optimal_sizing > 0.7 else 'probe'
+        )
+    
+    def _analyze_range_new(self, context: GTOContext) -> Dict[str, Any]:
+        """分析手牌范围（新类型系统）"""
+        hand_string = self._format_hand(context.hole_cards)
+        
+        return {
+            'hand': hand_string,
+            'position': context.position,
+            'street': context.street,
+            'in_open_range': self._is_in_open_range(hand_string, context.position),
+            'in_defend_range': self._is_in_defend_range(hand_string, context.position),
+            'range_strength': self._calculate_range_strength(hand_string, context.position),
+            'recommendation': {
+                'hand': hand_string,
+                'position': context.position,
+                'action': 'open' if self._is_in_open_range(hand_string, context.position) else 'fold',
+                'is_in_range': self._is_in_open_range(hand_string, context.position),
+                'strength': self._calculate_range_strength(hand_string, context.position),
+                'recommendation': '在推荐范围内' if self._is_in_open_range(hand_string, context.position) else '不在推荐范围内，建议弃牌',
+                'range_size': len(self.preflop_ranges.get(context.position, {}).get('open', []))
+            }
+        }
+    
+    def _fallback_gto_result_new(self, context: GTOContext) -> GTOResult:
+        """回退GTO结果（新类型系统）"""
+        return GTOResult(
+            action='call',
+            amount=context.call_amount,
+            confidence=0.5,
+            reasoning='GTO分析失败，使用保守策略',
+            gto_explanation='回退到基础策略',
+            frequencies={'call': 0.7, 'fold': 0.3},
+            sizing_recommendation=SizingRecommendation(
+                optimal_sizing=0.5,
+                min_sizing=0.3,
+                max_sizing=0.7,
+                explanation='回退尺度建议',
+                sizing_type='mixed'
+            ),
+            range_analysis={'hand': 'unknown', 'position': context.position, 'recommendation': {'action': 'call'}},
+            balance_metrics={'balance_score': 0.5, 'predictability': 0.5, 'exploitability': 0.5},
+            exploit_opportunities=[]
+        )
+    
+    def _is_in_open_range(self, hand_string: str, position: str) -> bool:
+        """检查手牌是否在开池范围内"""
+        position_range = self.preflop_ranges.get(position, {})
+        open_range = position_range.get('open', [])
+        return hand_string in open_range
+    
+    def _is_in_defend_range(self, hand_string: str, position: str) -> bool:
+        """检查手牌是否在防守范围内"""
+        position_range = self.preflop_ranges.get(position, {})
+        defend_range = position_range.get('defend', position_range.get('call_3bet', []))
+        return hand_string in defend_range
+    
+    def _calculate_range_strength(self, hand_string: str, position: str) -> float:
+        """计算范围强度（0-1）"""
+        position_range = self.preflop_ranges.get(position, {})
+        open_range = position_range.get('open', [])
+        
+        if not open_range:
+            return 0.0
+        
+        try:
+            hand_index = open_range.index(hand_string)
+            return 1.0 - (hand_index / len(open_range))
+        except ValueError:
+            return 0.0
