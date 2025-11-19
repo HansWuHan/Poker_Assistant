@@ -23,6 +23,8 @@ def test_enhanced_ai_thinking():
             "round_state": {
                 'street': 'preflop',
                 'dealer_btn': 0,
+                'small_blind_pos': 1,
+                'big_blind_pos': 2,
                 'pot': {'main': {'amount': 30}},
                 'community_card': [],
                 'seats': [
@@ -48,6 +50,8 @@ def test_enhanced_ai_thinking():
             "round_state": {
                 'street': 'flop',
                 'dealer_btn': 0,
+                'small_blind_pos': 1,
+                'big_blind_pos': 2,
                 'pot': {'main': {'amount': 150}},
                 'community_card': ['S9', 'H7', 'C2'],  # 顶对9
                 'seats': [
@@ -74,6 +78,8 @@ def test_enhanced_ai_thinking():
             "round_state": {
                 'street': 'flop',
                 'dealer_btn': 0,
+                'small_blind_pos': 1,
+                'big_blind_pos': 2,
                 'pot': {'main': {'amount': 120}},
                 'community_card': ['HA', 'HK', 'DQ'],  # 高牌面，无连接
                 'seats': [

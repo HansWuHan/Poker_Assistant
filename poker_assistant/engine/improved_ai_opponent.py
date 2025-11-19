@@ -1,5 +1,5 @@
 """
-改进的AI对手策略 - 解决过度激进问题
+改进的AI对手策略 - 使用GTO策略指导
 """
 import random
 try:
@@ -13,6 +13,16 @@ except ImportError:
         def declare_action(self, valid_actions, hole_card, round_state):
             pass
 
+# 导入GTO策略组件
+try:
+    from ..gto_strategy.gto_advisor import GTOAdvisor
+    from ..gto_strategy.gto_core import GTOSituation
+    GTO_AVAILABLE = True
+except ImportError:
+    GTO_AVAILABLE = False
+    GTOAdvisor = None
+    GTOSituation = None
+
 
 class ImprovedAIOpponentPlayer(BasePokerPlayer):
     """
@@ -20,7 +30,7 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
     """
     
     def __init__(self, difficulty: str = "medium", shared_hole_cards: dict = None, 
-                 show_thinking: bool = True):
+                 show_thinking: bool = True, gto_enabled: bool = True):
         super().__init__()
         self.difficulty = difficulty
         self.action_history = []
@@ -28,6 +38,20 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         self.hole_cards = []
         self.shared_hole_cards = shared_hole_cards
         self.show_thinking = show_thinking  # 是否显示思考过程
+        self.gto_enabled = gto_enabled  # 是否启用GTO策略
+        
+        # 确保有uuid属性
+        if not hasattr(self, 'uuid') or self.uuid is None:
+            import uuid as uuid_module
+            self.uuid = str(uuid_module.uuid4())
+        
+        # GTO策略组件
+        self.gto_advisor = None
+        if GTO_AVAILABLE and gto_enabled:
+            try:
+                self.gto_advisor = GTOAdvisor()
+            except Exception:
+                self.gto_advisor = None
         
         # 对手建模数据
         self.opponent_stats = {}
@@ -38,7 +62,7 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         }
     
     def declare_action(self, valid_actions, hole_card, round_state):
-        """决定下一步行动"""
+        """决定下一步行动 - 优先使用GTO策略指导"""
         import time
         
         fold_action = valid_actions[0]
@@ -72,6 +96,16 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
             # 即使关闭思考显示，也添加1秒延时让AI决策更自然
             time.sleep(1)
         
+        # 优先使用GTO策略（如果启用且可用）
+        if self.gto_enabled and self.gto_advisor:
+            try:
+                gto_action = self._get_gto_advice(valid_actions, hole_card, round_state)
+                if gto_action:
+                    return gto_action
+            except Exception as e:
+                print(f"GTO策略失败，使用传统策略: {e}")
+        
+        # GTO不可用或失败时，回退到传统策略
         # 根据难度选择策略
         if self.difficulty == "easy":
             action, amount = self._improved_easy_strategy(fold_action, call_action, raise_action, 
@@ -86,17 +120,17 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         return action, amount
     
     def _generate_thinking_process(self, hole_card, round_state, valid_actions):
-        """生成思考过程 - 增强版，包含对手手牌猜测"""
+        """生成思考过程 - 基于GTO策略结果，包含详细GTO分析和对手手牌猜测"""
         street = round_state['street']
         pot = round_state['pot']['main']['amount']
         call_amount = valid_actions[1]['amount']
         
-        # 基础牌力评估
+        # 基础牌力评估（用于显示，不作为决策依据）
         hand_strength = self._evaluate_real_hand_strength(hole_card, round_state.get('community_card', []))
         
         thinking_steps = []
         
-        # 精简版思考过程
+        # 手牌信息展示
         if street == 'preflop':
             card_desc = self._describe_hole_cards(hole_card)
             formatted_cards = self._format_hole_cards_display(hole_card)
@@ -108,25 +142,54 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
             formatted_cards = self._format_hole_cards_display(hole_card)
             thinking_steps.append(f"🎯 {hand_desc} {formatted_cards}")
         
+        # GTO策略分析（优先显示，作为决策依据）
+        gto_decision = None
+        if self.gto_enabled and self.gto_advisor:
+            try:
+                gto_analysis = self._get_gto_analysis(hole_card, round_state, valid_actions)
+                if gto_analysis:
+                    thinking_steps.append(f"🧠 {gto_analysis}")
+                    
+                    # 获取GTO决策用于最终建议
+                    gto_result = self._get_raw_gto_result(hole_card, round_state, valid_actions)
+                    if gto_result:
+                        gto_decision = gto_result.get('action', '')
+                        gto_amount = gto_result.get('amount', 0)
+                        gto_confidence = gto_result.get('confidence', 0)
+            except Exception as e:
+                # GTO分析失败时仍显示基础信息，但不作为决策依据
+                pass
+        
         # 底池信息（只在有跟注时显示）
         if call_amount > 0 and pot > 0:
             pot_odds = call_amount / (pot + call_amount)
             thinking_steps.append(f"💰 底池${pot}，跟注${call_amount}，赔率{pot_odds:.1%}")
         
-        # 对手手牌猜测（简化版）
+        # 对手手牌猜测（仅针对人类玩家）
         active_opponents = self._get_active_opponents(round_state)
         if active_opponents > 0:
             hand_guess = self._guess_opponent_hands(round_state, street)
             if hand_guess:
                 thinking_steps.append(f"🔍 {hand_guess}")
         
-        # 决策建议
-        if hand_strength >= 0.7:
-            thinking_steps.append("💡 强牌，考虑价值下注")
-        elif hand_strength >= 0.4:
-            thinking_steps.append("💡 中等牌力，谨慎行动")
+        # 基于GTO策略的最终决策建议
+        if gto_decision:
+            if gto_decision == 'raise':
+                thinking_steps.append("💡 GTO建议: 积极进攻，价值下注")
+            elif gto_decision == 'call':
+                thinking_steps.append("💡 GTO建议: 控制底池，谨慎跟注")
+            elif gto_decision == 'fold':
+                thinking_steps.append("💡 GTO建议: 放弃底池，保存筹码")
+            else:
+                thinking_steps.append(f"💡 GTO建议: 执行{gto_decision}行动")
         else:
-            thinking_steps.append("💡 弱牌，考虑弃牌")
+            # GTO不可用时，使用传统建议作为备选
+            if hand_strength >= 0.7:
+                thinking_steps.append("💡 传统建议: 强牌，考虑价值下注")
+            elif hand_strength >= 0.4:
+                thinking_steps.append("💡 传统建议: 中等牌力，谨慎行动")
+            else:
+                thinking_steps.append("💡 传统建议: 弱牌，考虑弃牌")
         
         return "\n".join(thinking_steps)
     
@@ -447,7 +510,7 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         return ""
     
     def _guess_opponent_hands(self, round_state, street):
-        """猜测对手手牌范围 - 增强版，排除盲注影响"""
+        """猜测对手手牌范围 - 仅针对人类玩家，排除AI对手"""
         action_histories = round_state.get('action_histories', {})
         community_cards = round_state.get('community_card', [])
         
@@ -475,7 +538,7 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         seats = round_state.get('seats', [])
         active_uuids = {seat['uuid'] for seat in seats if seat.get('state', 'participating') == 'participating' and seat['uuid'] != self.uuid}
         
-        # 分析每个对手的手牌范围（只分析活跃玩家）
+        # 分析每个对手的手牌范围（只分析活跃的人类玩家，跳过AI对手）
         for uuid, actions in opponent_actions.items():
             if not actions:
                 continue
@@ -484,12 +547,19 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
             if uuid not in active_uuids:
                 continue
             
-            # 获取对手名字
+            # 获取对手名字和类型
             opponent_name = "对手"
+            is_human = False
             for seat in round_state['seats']:
                 if seat['uuid'] == uuid:
                     opponent_name = seat['name']
+                    # 判断是否为人类玩家（名字不包含"AI_"）
+                    is_human = not opponent_name.startswith('AI_')
                     break
+            
+            # 只分析人类玩家，跳过AI对手
+            if not is_human:
+                continue
             
             # 分析下注模式（排除盲注）
             meaningful_actions = []
@@ -537,6 +607,19 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
                     if isinstance(action, dict) and 'action' in action and 'uuid' in action:
                         uuid = action['uuid']
                         if uuid != self.uuid and uuid not in [g.split(':')[0] for g in guesses]:
+                            # 获取对手信息
+                            opponent_name = "对手"
+                            is_human = False
+                            for seat in round_state['seats']:
+                                if seat['uuid'] == uuid:
+                                    opponent_name = seat['name']
+                                    is_human = not opponent_name.startswith('AI_')
+                                    break
+                            
+                            # 只分析人类玩家
+                            if not is_human:
+                                continue
+                            
                             action_type = action['action'].lower()
                             amount = action.get('amount', 0)
                             
@@ -1471,6 +1554,282 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         coordination = min(1.0, (straight_danger + flush_danger) / 2)
         
         return coordination
+    
+    def _get_gto_advice(self, valid_actions, hole_card, round_state):
+        """
+        获取GTO策略建议
+        """
+        if not self.gto_advisor:
+            return None
+        
+        try:
+            # 准备GTO需要的参数
+            street = round_state['street']
+            position = self._get_position_name(round_state)
+            stack_size = self._get_my_stack(round_state)
+            pot_size = round_state['pot']['main']['amount']
+            community_cards = round_state.get('community_card', [])
+            
+            # 计算跟注金额
+            call_amount = 0
+            for action in valid_actions:
+                if action.get('action') == 'call':
+                    call_amount = action.get('amount', 0)
+                    break
+            
+            # 提取对手行动历史
+            opponent_actions = self._extract_opponent_actions(round_state)
+            
+            # 获取活跃对手
+            active_opponents = []
+            for seat in round_state.get('seats', []):
+                if seat.get('uuid') != self.uuid and seat.get('state') == 'participating':
+                    active_opponents.append(seat.get('name', ''))
+            
+            # 获取GTO建议
+            gto_result = self.gto_advisor.get_gto_advice(
+                hole_cards=hole_card,
+                community_cards=community_cards,
+                street=street,
+                position=position,
+                pot_size=pot_size,
+                stack_size=stack_size,
+                call_amount=call_amount,
+                valid_actions=valid_actions,
+                opponent_actions=opponent_actions,
+                active_opponents=active_opponents
+            )
+            
+            if gto_result:
+                # 转换GTO建议为行动
+                action_type = gto_result['action']
+                amount = gto_result.get('amount', 0)
+                
+                # 映射到可用行动
+                if action_type == 'fold':
+                    fold_action = next((a for a in valid_actions if a['action'] == 'fold'), None)
+                    if fold_action:
+                        return fold_action['action'], fold_action['amount']
+                
+                elif action_type == 'call':
+                    call_action = next((a for a in valid_actions if a['action'] == 'call'), None)
+                    if call_action:
+                        return call_action['action'], call_action['amount']
+                
+                elif action_type == 'raise':
+                    raise_action = next((a for a in valid_actions if a['action'] == 'raise'), None)
+                    if raise_action and raise_action['amount']['min'] != -1:
+                        # 使用GTO建议的金额，但要确保在有效范围内
+                        gto_amount = max(amount, raise_action['amount']['min'])
+                        gto_amount = min(gto_amount, raise_action['amount']['max'])
+                        return raise_action['action'], int(gto_amount)
+            
+            return None
+            
+        except Exception as e:
+            print(f"GTO策略获取失败: {e}")
+            return None
+    
+    def _get_position_name(self, round_state):
+        """获取位置名称"""
+        position_idx = self._get_my_position(round_state)
+        total_players = len([s for s in round_state['seats'] if s['stack'] > 0])
+        
+        if total_players <= 2:
+            return "BTN" if position_idx == 0 else "BB"
+        
+        dealer_btn = round_state['dealer_btn']
+        small_blind_pos = round_state['small_blind_pos'] 
+        big_blind_pos = round_state['big_blind_pos']
+        
+        if position_idx == dealer_btn:
+            return "BTN"
+        elif position_idx == small_blind_pos:
+            return "SB"
+        elif position_idx == big_blind_pos:
+            return "BB"
+        elif position_idx == (dealer_btn - 1) % len(round_state['seats']):
+            return "CO"
+        elif position_idx == (dealer_btn - 2) % len(round_state['seats']):
+            return "HJ"
+        else:
+            return "MP"
+    
+    def _extract_opponent_actions(self, round_state):
+        """提取对手行动历史"""
+        actions = []
+        action_histories = round_state.get('action_histories', {})
+        
+        for street, street_actions in action_histories.items():
+            if street_actions:
+                for action in street_actions:
+                    if action.get('uuid') != self.uuid:
+                        actions.append({
+                            'street': street,
+                            'action': action.get('action'),
+                            'amount': action.get('amount', 0)
+                        })
+        
+        return actions
+    
+    def _get_raw_gto_result(self, hole_card, round_state, valid_actions):
+        """获取原始GTO结果，用于思考过程分析"""
+        if not self.gto_advisor:
+            return None
+        
+        try:
+            # 准备GTO需要的参数
+            street = round_state['street']
+            position = self._get_position_name(round_state)
+            stack_size = self._get_my_stack(round_state)
+            pot_size = round_state['pot']['main']['amount']
+            community_cards = round_state.get('community_card', [])
+            
+            # 计算跟注金额
+            call_amount = 0
+            for action in valid_actions:
+                if action.get('action') == 'call':
+                    call_amount = action.get('amount', 0)
+                    break
+            
+            # 提取对手行动历史
+            opponent_actions = self._extract_opponent_actions(round_state)
+            
+            # 获取活跃对手
+            active_opponents = []
+            for seat in round_state.get('seats', []):
+                if seat.get('uuid') != self.uuid and seat.get('state') == 'participating':
+                    active_opponents.append(seat.get('name', ''))
+            
+            # 获取GTO建议
+            return self.gto_advisor.get_gto_advice(
+                hole_cards=hole_card,
+                community_cards=community_cards,
+                street=street,
+                position=position,
+                pot_size=pot_size,
+                stack_size=stack_size,
+                call_amount=call_amount,
+                valid_actions=valid_actions,
+                opponent_actions=opponent_actions,
+                active_opponents=active_opponents
+            )
+            
+        except Exception as e:
+            return None
+    
+    def _get_gto_analysis(self, hole_card, round_state, valid_actions):
+        """获取GTO策略分析文本 - 增强版，显示更多详细信息"""
+        try:
+            # 准备GTO需要的参数
+            street = round_state['street']
+            position = self._get_position_name(round_state)
+            stack_size = self._get_my_stack(round_state)
+            pot_size = round_state['pot']['main']['amount']
+            community_cards = round_state.get('community_card', [])
+            
+            # 计算跟注金额
+            call_amount = 0
+            for action in valid_actions:
+                if action.get('action') == 'call':
+                    call_amount = action.get('amount', 0)
+                    break
+            
+            # 提取对手行动历史
+            opponent_actions = self._extract_opponent_actions(round_state)
+            
+            # 获取活跃对手
+            active_opponents = []
+            for seat in round_state.get('seats', []):
+                if seat.get('uuid') != self.uuid and seat.get('state') == 'participating':
+                    active_opponents.append(seat.get('name', ''))
+            
+            # 获取GTO建议
+            gto_result = self.gto_advisor.get_gto_advice(
+                hole_cards=hole_card,
+                community_cards=community_cards,
+                street=street,
+                position=position,
+                pot_size=pot_size,
+                stack_size=stack_size,
+                call_amount=call_amount,
+                valid_actions=valid_actions,
+                opponent_actions=opponent_actions,
+                active_opponents=active_opponents
+            )
+            
+            if gto_result:
+                # 提取关键信息生成详细的GTO分析
+                action = gto_result['action']
+                amount = gto_result.get('amount', 0)
+                confidence = gto_result.get('confidence', 0)
+                reasoning = gto_result.get('reasoning', '')
+                frequencies = gto_result.get('frequencies', {})
+                sizing_recommendation = gto_result.get('sizing_recommendation', {})
+                range_analysis = gto_result.get('range_analysis', {})
+                
+                # 生成详细的GTO分析文本
+                gto_parts = []
+                
+                # 1. 主要策略建议
+                main_action = f"🎯 GTO策略: {action}"
+                if amount > 0:
+                    main_action += f" ${amount}"
+                if confidence > 0:
+                    main_action += f" (置信度: {int(confidence * 100)}%)"
+                gto_parts.append(main_action)
+                
+                # 2. 频率分析（如果有）
+                if frequencies:
+                    freq_text = "📊 频率分布:"
+                    for action_type, freq in frequencies.items():
+                        if isinstance(freq, (int, float)):
+                            percentage = int(freq * 100)
+                            bar = "█" * (percentage // 10) + "░" * (10 - percentage // 10)
+                            freq_text += f" {action_type}: {percentage}% [{bar}]"
+                    gto_parts.append(freq_text)
+                
+                # 3. 尺度建议（如果有）
+                if sizing_recommendation and isinstance(sizing_recommendation, dict):
+                    optimal = sizing_recommendation.get('optimal_sizing', 0)
+                    if optimal > 0:
+                        pot_percentage = int(optimal * 100)
+                        gto_parts.append(f"💰 尺度建议: {pot_percentage}% 底池")
+                
+                # 4. 范围分析（如果有）
+                if range_analysis and isinstance(range_analysis, dict):
+                    hand_strength = range_analysis.get('range_strength', 0)
+                    in_range = range_analysis.get('in_open_range', False)
+                    if hand_strength > 0:
+                        strength_text = f"🎴 牌力评估: {int(hand_strength * 100)}%"
+                        if in_range:
+                            strength_text += " (在标准范围内)"
+                        gto_parts.append(strength_text)
+                
+                # 5. 关键理由
+                if reasoning:
+                    # 提取理由中的核心信息
+                    lines = reasoning.strip().split('\n')
+                    key_points = []
+                    for line in lines:
+                        line = line.strip()
+                        if line.startswith('•') and len(key_points) < 3:
+                            key_points.append(line.replace('•', '').strip())
+                        elif '理由:' in line and len(key_points) < 3:
+                            reason_text = line.split('理由:')[1].strip()
+                            if reason_text and len(reason_text) < 100:
+                                key_points.append(reason_text)
+                    
+                    if key_points:
+                        gto_parts.append(f"💡 核心逻辑: {'; '.join(key_points)}")
+                
+                return " | ".join(gto_parts)
+            
+            return None
+            
+        except Exception as e:
+            # GTO分析失败时返回None，不影响整体思考过程
+            return None
     
     def _update_table_dynamics(self, round_state):
         """更新桌面动态"""
