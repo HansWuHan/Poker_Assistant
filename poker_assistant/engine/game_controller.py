@@ -320,7 +320,11 @@ class GameController:
                 community_cards = round_state.get('community_card', [])
                 pot_size = round_state['pot']['main']['amount']
                 
-                self.renderer.render_street_start(street, community_cards, pot_size)
+                # 获取玩家信息
+                seats = round_state.get('seats', [])
+                dealer_btn = self.current_dealer_btn
+                
+                self.renderer.render_street_start(street, community_cards, pot_size, seats, dealer_btn)
             
             elif event_type == "game_update":
                 action = event_data['action']

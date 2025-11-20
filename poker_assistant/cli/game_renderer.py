@@ -76,15 +76,12 @@ class GameRenderer:
         # 手牌
         self._render_hole_cards(hole_card)
         
-        # 玩家信息
-        self._render_players_info(seats, dealer_btn)
-        
         self.console.print()
     
     def render_street_start(self, street: str, community_cards: List[str], 
-                           pot_size: int):
+                           pot_size: int, seats: List[Dict] = None, dealer_btn: int = 0):
         """渲染街道开始"""
-        self.console.print("\n" + "-"*60, style="yellow")
+        self.console.print("\n" + "="*60, style="bold yellow")
         self.console.print(f"🎴 {get_street_name(street)}", style="bold yellow")
         
         # 公共牌
@@ -92,8 +89,13 @@ class GameRenderer:
             self._render_community_cards(community_cards)
         
         # 底池
-        self.console.print(f"💰 底池: {format_chips(pot_size)}", style="green")
-        self.console.print("-"*60, style="yellow")
+        self.console.print(f"💰 底池: {format_chips(pot_size)}", style="bold green")
+        
+        # 玩家状态（新增）
+        if seats:
+            self._render_players_info(seats, dealer_btn)
+        
+        self.console.print("="*60, style="bold yellow")
     
     def render_player_action(self, player_name: str, action: str, 
                             amount: int, is_human: bool = False, 
@@ -446,7 +448,7 @@ class GameRenderer:
         
         self.console.print(cards_text)
     
-    def _render_players_info(self, seats: List[Dict], dealer_btn: int):
+    def _render_players_info(self, seats: List[Dict], dealer_btn: int, show_detailed: bool = False):
         """渲染玩家信息"""
         self.console.print("\n👥 玩家状态:", style="bold")
         
