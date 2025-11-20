@@ -150,8 +150,7 @@ class InputHandler:
             actions.append("[O]牌力分析")
         
         # 添加AI思考显示切换按钮
-        thinking_status = "on" if self.ai_show_thinking else "off"
-        actions.append(f"[P]AI思考({thinking_status})")
+        actions.append(f"[P]AI思考开关")
         
         actions.append("[Q]提问")
         actions.append("[H]帮助")
