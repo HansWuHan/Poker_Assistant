@@ -27,6 +27,11 @@
 git clone <your-repo-url>
 cd Poker_Assistant
 
+# 创建虚拟环境
+python -m venv myenv
+source myenv/bin/activate  # Linux/Mac
+# myenv\Scripts\activate  # Windows
+
 # 安装依赖
 pip install -r requirements.txt
 
