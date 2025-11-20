@@ -199,7 +199,6 @@ class GameRenderer:
         # 显示公共牌
         community_cards = round_state.get('community_card', [])
         if community_cards and len(community_cards) > 0:
-            self.console.print("\n🎴 公共牌:")
             self._render_community_cards(community_cards)
         
         # 创建获胜者UUID集合（用于标注）

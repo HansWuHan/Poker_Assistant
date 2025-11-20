@@ -72,7 +72,19 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         # 更新桌面动态
         self._update_table_dynamics(round_state)
         
-        # 生成思考过程（如果开启显示）
+        # 优先使用GTO策略（如果启用且可用）
+        gto_action = None
+        gto_success = False
+        
+        if self.gto_enabled and self.gto_advisor:
+            try:
+                gto_action = self._get_gto_advice(valid_actions, hole_card, round_state)
+                if gto_action:
+                    gto_success = True
+            except Exception as e:
+                print(f"GTO策略失败，使用传统策略: {e}")
+        
+        # 生成思考过程（如果开启显示）- 现在基于实际决策
         if self.show_thinking:
             # 先输出空行和AI玩家名字+思考中
             print()
@@ -87,26 +99,27 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
             # 等待2秒
             time.sleep(2)
             
-            # 输出思考内容
-            thinking_process = self._generate_thinking_process(
-                hole_card, round_state, valid_actions
-            )
+            # 基于实际决策生成思考内容
+            if gto_success and gto_action:
+                # 使用GTO决策作为思考过程
+                thinking_process = self._generate_thinking_from_action(
+                    gto_action, hole_card, round_state, valid_actions
+                )
+            else:
+                # 使用传统策略思考
+                thinking_process = self._generate_thinking_process(
+                    hole_card, round_state, valid_actions
+                )
             self._display_thinking(thinking_process)
         else:
             # 即使关闭思考显示，也添加1秒延时让AI决策更自然
             time.sleep(1)
         
-        # 优先使用GTO策略（如果启用且可用）
-        if self.gto_enabled and self.gto_advisor:
-            try:
-                gto_action = self._get_gto_advice(valid_actions, hole_card, round_state)
-                if gto_action:
-                    return gto_action
-            except Exception as e:
-                print(f"GTO策略失败，使用传统策略: {e}")
+        # 返回GTO决策或回退到传统策略
+        if gto_success and gto_action:
+            return gto_action
         
-        # GTO不可用或失败时，回退到传统策略
-        # 根据难度选择策略
+        # 根据难度选择传统策略
         if self.difficulty == "easy":
             action, amount = self._improved_easy_strategy(fold_action, call_action, raise_action, 
                                                          hole_card, round_state)
@@ -1748,6 +1761,93 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
             
         except Exception as e:
             return None
+    
+    def _generate_thinking_from_action(self, action_result, hole_card, round_state, valid_actions):
+        """基于实际决策结果生成思考过程"""
+        street = round_state['street']
+        pot = round_state['pot']['main']['amount']
+        call_amount = valid_actions[1]['amount']
+        
+        # 基础牌力评估
+        hand_strength = self._evaluate_real_hand_strength(hole_card, round_state.get('community_card', []))
+        
+        thinking_steps = []
+        
+        # 手牌信息展示
+        if street == 'preflop':
+            card_desc = self._describe_hole_cards(hole_card)
+            formatted_cards = self._format_hole_cards_display(hole_card)
+            position = self._get_my_position(round_state)
+            position_desc = self._describe_position(position, len([p for p in round_state['seats'] if p['stack'] > 0]))
+            thinking_steps.append(f"🎯 {formatted_cards} ({card_desc}) - {position_desc}")
+        else:
+            hand_desc = self._describe_hand_strength(hand_strength, hole_card, round_state.get('community_card', []))
+            formatted_cards = self._format_hole_cards_display(hole_card)
+            thinking_steps.append(f"🎯 {hand_desc} {formatted_cards}")
+        
+        # 基于实际决策生成GTO分析
+        if action_result:
+            action = action_result[0]  # fold, call, raise
+            amount = action_result[1] if len(action_result) > 1 else 0
+            
+            # 获取GTO结果用于频率分析
+            gto_result = self._get_raw_gto_result(hole_card, round_state, valid_actions)
+            if gto_result:
+                frequencies = gto_result.get('frequencies', {})
+                
+                # 显示实际决策和频率
+                confidence = frequencies.get(action, 0) if frequencies else 0
+                
+                # 显示GTO策略行
+                action_text = {
+                    'fold': '🚫 弃牌',
+                    'call': '✅ 跟注', 
+                    'raise': '📈 加注'
+                }.get(action, action)
+                
+                thinking_steps.append(f"🧠 GTO策略: {action_text} ${amount} (置信度: {confidence:.0%})")
+                
+                # 显示频率分布
+                if frequencies:
+                    freq_parts = []
+                    for action_type, freq in frequencies.items():
+                        if freq > 0.01:  # 只显示大于1%的频率
+                            bar_length = int(freq * 20)  # 20个字符的进度条
+                            bar = "█" * bar_length + "░" * (20 - bar_length)
+                            freq_parts.append(f"{action_type}: {freq:.0%} [{bar}]")
+                    if freq_parts:
+                        thinking_steps.append(f"📊 频率分布: {' | '.join(freq_parts)}")
+                
+                # 底池信息
+                if call_amount > 0 and pot > 0:
+                    pot_odds = call_amount / (pot + call_amount)
+                    thinking_steps.append(f"💰 底池${pot}，跟注${call_amount}，赔率{pot_odds:.1%}")
+                
+                # 基于实际决策给出合理建议
+                if action == 'fold' and confidence < 0.3:
+                    thinking_steps.append("💡 GTO建议: 低概率但合理的弃牌选择")
+                elif action == 'call' and confidence > 0.4:
+                    thinking_steps.append("💡 GTO建议: 基于频率分析的合理跟注")
+                elif action == 'raise' and confidence > 0.4:
+                    thinking_steps.append("💡 GTO建议: 基于频率分析的积极进攻")
+                else:
+                    # 混合策略的情况
+                    if action == 'fold':
+                        thinking_steps.append("💡 GTO建议: 混合策略中的弃牌选择")
+                    elif action == 'call':
+                        thinking_steps.append("💡 GTO建议: 混合策略中的跟注选择")
+                    elif action == 'raise':
+                        thinking_steps.append("💡 GTO建议: 混合策略中的加注选择")
+            else:
+                # 没有GTO数据，使用传统逻辑
+                if action == 'fold':
+                    thinking_steps.append("💡 GTO建议: 放弃底池，保存筹码")
+                elif action == 'call':
+                    thinking_steps.append("💡 GTO建议: 控制底池，谨慎跟注")
+                elif action == 'raise':
+                    thinking_steps.append("💡 GTO建议: 积极进攻，价值下注")
+        
+        return "\n".join(thinking_steps)
     
     def _get_gto_analysis(self, hole_card, round_state, valid_actions):
         """获取GTO策略分析文本 - 增强版，显示更多详细信息"""

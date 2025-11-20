@@ -388,8 +388,48 @@ class GTOCore:
             return ""
         
         card1, card2 = hole_cards[0], hole_cards[1]
-        rank1, suit1 = card1[1], card1[0]
-        rank2, suit2 = card2[1], card2[0]
+        
+        # 解析手牌格式，支持多种输入格式
+        def parse_card(card):
+            """解析单张牌，支持多种格式"""
+            if len(card) == 2:
+                # 可能是标准格式：'SA' (黑桃A) 或 'AS' (A黑桃)
+                # 需要判断哪个是rank，哪个是suit
+                char1, char2 = card[0], card[1]
+                
+                # 如果第一个是A/T/J/Q/K/2-9，则是rank+suit格式
+                if char1 in 'ATJQK23456789':
+                    return char1, char2  # rank, suit
+                # 如果第二个是A/T/J/Q/K/2-9，则是suit+rank格式
+                elif char2 in 'ATJQK23456789':
+                    return char2, char1  # rank, suit
+                else:
+                    # 无法判断，默认第一个为suit，第二个为rank
+                    return char2, char1
+                    
+            elif len(card) == 3 and card.startswith('10'):
+                # 10的格式：'10D' (方块10)
+                return 'T', card[2]  # 10用T表示
+            elif len(card) == 3:
+                # 其他3字符格式，尝试解析
+                # 可能是suit+rank格式：'C2' (梅花2)
+                suit, rank = card[0], card[1:]
+                if rank in 'ATJQK23456789':
+                    return rank, suit
+                else:
+                    # 反向解析
+                    return card[1], card[0]
+            else:
+                # 默认处理
+                return '2', 'S'  # 默认2♠
+        
+        try:
+            rank1, suit1 = parse_card(card1)
+            rank2, suit2 = parse_card(card2)
+        except:
+            # 解析失败，使用默认值
+            rank1, suit1 = '2', 'S'
+            rank2, suit2 = '3', 'H'
         
         # 排序：高牌在前
         ranks = {'2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, 
@@ -619,9 +659,70 @@ class GTOCore:
     
     def _evaluate_hand_strength(self, hole_cards: List[str], community_cards: List[str]) -> float:
         """评估手牌强度 (0-1)"""
-        # 简化实现：基于现有逻辑
+        if not hole_cards or len(hole_cards) < 2:
+            return 0.0
+        
+        # 翻牌前评估基于手牌本身强度
         if not community_cards:
-            return 0.5  # 翻牌前中性评估
+            return self._evaluate_preflop_hand_strength(hole_cards)
+        
+        # 翻牌后评估结合公共牌
+        return self._evaluate_postflop_hand_strength(hole_cards, community_cards)
+    
+    def _evaluate_preflop_hand_strength(self, hole_cards: List[str]) -> float:
+        """评估翻牌前手牌强度 (0-1)"""
+        if not hole_cards or len(hole_cards) < 2:
+            return 0.0
+        
+        # 格式化手牌
+        card1, card2 = hole_cards[0], hole_cards[1]
+        rank1, suit1 = card1[1], card1[0]
+        rank2, suit2 = card2[1], card2[0]
+        
+        # 牌力等级
+        ranks = {'2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, 
+                '9': 9, 'T': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14}
+        
+        rank_val1 = ranks.get(rank1, 0)
+        rank_val2 = ranks.get(rank2, 0)
+        
+        # 基础强度计算
+        base_strength = 0.0
+        
+        # 对子
+        if rank1 == rank2:
+            # 对子强度：22=0.4, AA=0.95
+            base_strength = 0.4 + (rank_val1 - 2) * 0.55 / 12
+            return min(0.95, base_strength)
+        
+        # 高牌因素
+        high_card = max(rank_val1, rank_val2)
+        low_card = min(rank_val1, rank_val2)
+        
+        # 高牌奖励
+        high_card_bonus = (high_card - 2) / 12 * 0.3
+        
+        # 间隔惩罚（间隔越大，强度越低）
+        gap = high_card - low_card
+        gap_penalty = gap * 0.05
+        
+        # 同花奖励
+        suited_bonus = 0.1 if suit1 == suit2 else 0
+        
+        # 连牌奖励
+        connector_bonus = 0.05 if gap == 1 else 0
+        
+        # 计算最终强度
+        base_strength = 0.2 + high_card_bonus - gap_penalty + suited_bonus + connector_bonus
+        
+        # 确保在合理范围内
+        return max(0.1, min(0.8, base_strength))
+    
+    def _evaluate_postflop_hand_strength(self, hole_cards: List[str], community_cards: List[str]) -> float:
+        """评估翻牌后手牌强度 (0-1)"""
+        # 简化实现：基于现有逻辑
+        if not community_cards or len(community_cards) < 3:
+            return self._evaluate_preflop_hand_strength(hole_cards)
         
         # 这里可以集成更复杂的牌力评估
         # 暂时返回一个基于牌型的简单评估
