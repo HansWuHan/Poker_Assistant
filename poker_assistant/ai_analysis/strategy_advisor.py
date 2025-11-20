@@ -138,27 +138,42 @@ class StrategyAdvisor:
             # 添加当前请求
             messages.append({"role": "user", "content": current_prompt})
             
+            # 初始化建议字典
+            advice = {
+                "recommended_action": "call",
+                "confidence": "medium",
+                "reasoning": "",
+                "raw_response": "",
+                "pot_size": pot_size,
+                "stack_size": stack_size,
+                "call_amount": call_amount,
+                "gto_analysis": {}
+            }
+            
             # 调用 LLM (提升 max_tokens 到 3000)
             debug_mode = os.getenv('DEBUG', 'false').lower() == 'true'
-            response = self.llm_client.chat(
-                messages, 
-                temperature=0.7, 
-                max_tokens=3000,  # 提升到 3000
-                debug=debug_mode
-            )
-            
-            # 保存到历史
-            self.context_manager.add_user_message(current_prompt)
-            self.context_manager.add_assistant_message(response)
-            
-            # 解析响应
-            advice = self._parse_response(response)
-            
-            # 添加原始数据
-            advice["raw_response"] = response
-            advice["pot_size"] = pot_size
-            advice["stack_size"] = stack_size
-            advice["call_amount"] = call_amount
+            try:
+                response = self.llm_client.chat(
+                    messages, 
+                    temperature=0.7, 
+                    max_tokens=3000,  # 提升到 3000
+                    debug=debug_mode
+                )
+                
+                # 保存到历史
+                self.context_manager.add_user_message(current_prompt)
+                self.context_manager.add_assistant_message(response)
+                
+                advice["reasoning"] = response
+                advice["raw_response"] = response
+                
+            except Exception as llm_error:
+                # LLM调用失败，提供降级建议
+                print(f"LLM调用失败: {llm_error}")
+                advice["reasoning"] = f"AI分析暂时不可用: {str(llm_error)}。请根据自己的判断决定行动。"
+                advice["error"] = str(llm_error)
+                advice["confidence"] = "low"
+                return advice
             
             return advice
         
@@ -268,52 +283,6 @@ class StrategyAdvisor:
         
         return " / ".join(actions)
     
-    def _parse_response(self, response: str) -> Dict[str, Any]:
-        """
-        解析 AI 响应
-        
-        Args:
-            response: AI 响应文本
-        
-        Returns:
-            解析后的建议字典
-        """
-        # 尝试提取关键信息
-        advice = {
-            "reasoning": response,
-            "recommended_action": self._extract_action(response),
-            "confidence": "medium"
-        }
-        
-        # 尝试解析 JSON（如果 AI 返回了结构化数据）
-        try:
-            # 查找 JSON 块
-            if "{" in response and "}" in response:
-                start = response.index("{")
-                end = response.rindex("}") + 1
-                json_str = response[start:end]
-                parsed = json.loads(json_str)
-                advice.update(parsed)
-        except:
-            pass
-        
-        return advice
-    
-    def _extract_action(self, text: str) -> str:
-        """从文本中提取推荐行动"""
-        text_lower = text.lower()
-        
-        if "弃牌" in text or "fold" in text_lower:
-            return "fold"
-        elif "加注" in text or "raise" in text_lower:
-            return "raise"
-        elif "跟注" in text or "call" in text_lower:
-            return "call"
-        elif "过牌" in text or "check" in text_lower:
-            return "call"  # 过牌相当于跟注0
-        
-        return "call"  # 默认跟注
-    
     def _fallback_advice(self, error: Exception, valid_actions: List[Dict]) -> Dict[str, Any]:
         """降级建议（当 API 失败时）"""
         return {
@@ -322,54 +291,3 @@ class StrategyAdvisor:
             "confidence": "low",
             "error": str(error)
         }
-    
-    def format_advice_display(self, advice: Dict[str, Any]) -> str:
-        """
-        格式化建议用于显示
-        
-        Args:
-            advice: 建议字典
-        
-        Returns:
-            格式化的文本
-        """
-        lines = []
-        
-        # 推荐行动
-        action = advice.get("recommended_action", "")
-        action_cn = {
-            "fold": "弃牌",
-            "call": "跟注",
-            "raise": "加注"
-        }.get(action, action)
-        
-        lines.append(f"💡 推荐行动: {action_cn}")
-        
-        # 建议金额（如果是加注）
-        if action == "raise" and "raise_amount" in advice:
-            amount = advice["raise_amount"]
-            lines.append(f"💰 建议金额: ${amount}")
-        
-        # 理由
-        reasoning = advice.get("reasoning", "")
-        if reasoning:
-            lines.append(f"\n📝 理由:\n{reasoning}")
-        
-        # 胜率（如果有）
-        if "win_probability" in advice:
-            win_prob = advice["win_probability"]
-            if isinstance(win_prob, (int, float)):
-                lines.append(f"\n📊 胜率估算: {win_prob*100:.0f}%")
-        
-        # 风险等级（如果有）
-        if "risk_level" in advice:
-            risk = advice["risk_level"]
-            risk_icon = {
-                "low": "🟢",
-                "medium": "🟡",
-                "high": "🔴"
-            }.get(risk, "⚪")
-            lines.append(f"{risk_icon} 风险等级: {risk}")
-        
-        return "\n".join(lines)
-

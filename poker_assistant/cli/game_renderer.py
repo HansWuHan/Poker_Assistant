@@ -354,44 +354,28 @@ class GameRenderer:
     
     def render_ai_advice(self, advice: Dict[str, Any]):
         """渲染 AI 建议"""
-        if not advice or "error" in advice:
+        if not advice:
+            self.console.print("⚠️ 无法获取AI分析", style="yellow")
+            return
+            
+        # 检查是否有错误
+        if "error" in advice:
+            error_msg = advice.get("reasoning", "AI分析暂时不可用")
+            self.console.print(f"⚠️ {error_msg}", style="yellow")
             return
         
         # 提取建议内容
         reasoning = advice.get("reasoning", "暂无建议")
-        recommended_action = advice.get("recommended_action", "")
         
-        # 行动中文化
-        action_cn = {
-            "fold": "🚫 弃牌",
-            "call": "✅ 跟注",
-            "raise": "📈 加注"
-        }.get(recommended_action, recommended_action)
+        # 处理不同类型的reasoning内容
+        if isinstance(reasoning, list):
+            content = "\n".join(reasoning)
+        elif isinstance(reasoning, str):
+            content = reasoning
+        else:
+            content = str(reasoning)
         
-        # 构建显示内容
-        content_lines = []
-        
-        if recommended_action:
-            content_lines.append(f"💡 推荐行动: [bold]{action_cn}[/bold]")
-        
-        # 加注金额
-        if "raise_amount" in advice and recommended_action == "raise":
-            amount = advice["raise_amount"]
-            content_lines.append(f"💰 建议金额: ${amount}")
-        
-        # 理由（完整显示，不截断）
-        if reasoning:
-            # 移除长度限制，显示完整的AI建议
-            content_lines.append(f"\n📝 {reasoning}")
-        
-        # 胜率
-        if "win_probability" in advice:
-            win_prob = advice["win_probability"]
-            if isinstance(win_prob, (int, float)):
-                content_lines.append(f"\n📊 胜率估算: {win_prob*100:.0f}%")
-        
-        content = "\n".join(content_lines)
-        
+    
         panel = Panel(
             content,
             title="🤖 AI 策略建议",
