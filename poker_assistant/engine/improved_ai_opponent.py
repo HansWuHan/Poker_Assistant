@@ -84,7 +84,23 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
             except Exception as e:
                 print(f"GTO策略失败，使用传统策略: {e}")
         
-        # 生成思考过程（如果开启显示）- 现在基于实际决策
+        # 返回GTO决策或回退到传统策略
+        final_action = None
+        if gto_success and gto_action:
+            final_action = gto_action
+        else:
+            # 根据难度选择传统策略
+            if self.difficulty == "easy":
+                final_action = self._improved_easy_strategy(fold_action, call_action, raise_action, 
+                                                             hole_card, round_state)
+            elif self.difficulty == "hard":
+                final_action = self._improved_hard_strategy(fold_action, call_action, raise_action,
+                                                             hole_card, round_state)
+            else:  # medium
+                final_action = self._improved_medium_strategy(fold_action, call_action, raise_action,
+                                                               hole_card, round_state)
+        
+        # 生成思考过程（如果开启显示）- 只基于最终决策，避免重复输出
         if self.show_thinking:
             # 先输出空行和AI玩家名字+思考中
             print()
@@ -99,38 +115,16 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
             # 等待2秒
             time.sleep(2)
             
-            # 基于实际决策生成思考内容
-            if gto_success and gto_action:
-                # 使用GTO决策作为思考过程
-                thinking_process = self._generate_thinking_from_action(
-                    gto_action, hole_card, round_state, valid_actions
-                )
-            else:
-                # 使用传统策略思考
-                thinking_process = self._generate_thinking_process(
-                    hole_card, round_state, valid_actions
-                )
+            # 基于最终实际决策生成思考内容（只一次，确保一致性）
+            thinking_process = self._generate_thinking_from_action(
+                final_action, hole_card, round_state, valid_actions
+            )
             self._display_thinking(thinking_process)
         else:
             # 即使关闭思考显示，也添加1秒延时让AI决策更自然
             time.sleep(1)
         
-        # 返回GTO决策或回退到传统策略
-        if gto_success and gto_action:
-            return gto_action
-        
-        # 根据难度选择传统策略
-        if self.difficulty == "easy":
-            action, amount = self._improved_easy_strategy(fold_action, call_action, raise_action, 
-                                                         hole_card, round_state)
-        elif self.difficulty == "hard":
-            action, amount = self._improved_hard_strategy(fold_action, call_action, raise_action,
-                                                         hole_card, round_state)
-        else:  # medium
-            action, amount = self._improved_medium_strategy(fold_action, call_action, raise_action,
-                                                           hole_card, round_state)
-        
-        return action, amount
+        return final_action
     
     def _generate_thinking_process(self, hole_card, round_state, valid_actions):
         """生成思考过程 - 基于GTO策略结果，包含详细GTO分析和对手手牌猜测"""
@@ -174,7 +168,7 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
                         sizing_rec = gto_result.get('sizing_recommendation', {})
                         
                         # 构建GTO分析字符串，频率分布单独一行
-                        gto_info = f"🧠 GTO策略: {gto_decision} ${gto_amount} (置信度: {gto_confidence:.0%})"
+                        gto_info = f"🧠 GTO策略: {gto_decision} ${int(gto_amount)} (置信度: {gto_confidence:.0%})"
                         
                         # 添加频率分布（新行显示）
                         if frequencies:
@@ -247,10 +241,160 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         
         action_text = action_names.get(action, action)
         if amount > 0:
-            return f"{action_text} ${amount}"
+            return f"{action_text} ${int(amount)}"
         else:
             return action_text
     
+    def _is_heads_up(self, round_state):
+        """判断是否进入单挑场景（heads-up）"""
+        return self._get_active_opponents(round_state) == 1
+
+    def _analyze_heads_up_opponent(self, round_state):
+        """单挑对手建模：分析下注频率、激进程度、摊牌倾向"""
+        if not self._is_heads_up(round_state):
+            return None
+        
+        # 获取对手UUID（单挑时只有一个对手）
+        opponent_uuid = None
+        for seat in round_state.get('seats', []):
+            if seat.get('uuid') != self.uuid and seat.get('state') == 'participating':
+                opponent_uuid = seat['uuid']
+                break
+        
+        if not opponent_uuid:
+            return None
+        
+        # 统计对手行为
+        action_histories = round_state.get('action_histories', {})
+        total_actions = 0
+        aggressive_actions = 0
+        call_actions = 0
+        fold_actions = 0
+        showdown_count = 0
+        
+        for street, actions in action_histories.items():
+            if isinstance(actions, list):
+                for action in actions:
+                    if isinstance(action, dict) and action.get('uuid') == opponent_uuid:
+                        action_type = action.get('action', '').lower()
+                        amount = action.get('amount', 0)
+                        
+                        # 排除盲注
+                        if street == 'preflop' and amount <= 20 and action_type in ['call', 'raise']:
+                            continue
+                        
+                        total_actions += 1
+                        if action_type in ['raise', 'bet']:
+                            aggressive_actions += 1
+                        elif action_type == 'call':
+                            call_actions += 1
+                        elif action_type == 'fold':
+                            fold_actions += 1
+        
+        if total_actions == 0:
+            return {
+                'aggression_factor': 0.5,
+                'fold_rate': 0.3,
+                'tendency': 'unknown',
+                'description': '对手数据不足，使用默认策略'
+            }
+        
+        # 计算激进程度
+        aggression_factor = aggressive_actions / total_actions
+        fold_rate = fold_actions / total_actions
+        
+        # 判断对手类型
+        if aggression_factor > 0.6:
+            tendency = 'very_aggressive'
+            description = '对手非常激进，频繁加注，建议收紧范围，多用强牌反击'
+        elif aggression_factor > 0.4:
+            tendency = 'aggressive'
+            description = '对手激进，喜欢主导底池，建议谨慎对抗'
+        elif aggression_factor < 0.2:
+            tendency = 'very_passive'
+            description = '对手非常保守，很少加注，可以多偷盲，价值下注更薄'
+        elif aggression_factor < 0.3:
+            tendency = 'passive'
+            description = '对手保守，多为跟注，可以大胆价值下注'
+        else:
+            tendency = 'balanced'
+            description = '对手平衡型，建议标准策略应对'
+        
+        return {
+            'aggression_factor': aggression_factor,
+            'fold_rate': fold_rate,
+            'tendency': tendency,
+            'description': description,
+            'total_actions': total_actions,
+            'aggressive_actions': aggressive_actions
+        }
+
+    def _predict_opponent_range_heads_up(self, round_state, opponent_analysis):
+        """单挑场景：预测对手手牌范围"""
+        if not opponent_analysis:
+            return "对手范围：标准范围（数据不足）"
+        
+        street = round_state['street']
+        action_histories = round_state.get('action_histories', {})
+        current_street_actions = action_histories.get(street, [])
+        
+        # 获取对手当前街道的行动
+        opponent_current_action = None
+        for action in current_street_actions:
+            if isinstance(action, dict) and action.get('uuid') != self.uuid:
+                action_type = action.get('action', '').lower()
+                amount = action.get('amount', 0)
+                # 排除盲注
+                if not (street == 'preflop' and amount <= 20):
+                    opponent_current_action = {'type': action_type, 'amount': amount}
+        
+        # 基于对手类型和当前行动预测范围
+        tendency = opponent_analysis['tendency']
+        
+        if street == 'preflop':
+            if tendency == 'very_aggressive':
+                if opponent_current_action and opponent_current_action['type'] == 'raise':
+                    if opponent_current_action['amount'] > 100:
+                        return "对手范围：强牌（AA,KK,AK）或频繁诈唬"
+                    else:
+                        return "对手范围：较宽，可能包含KQ,AJ,中等对子"
+                else:
+                    return "对手范围：较宽，可能包含同花连牌，高牌"
+            elif tendency == 'very_passive':
+                if opponent_current_action and opponent_current_action['type'] == 'raise':
+                    return "对手范围：极强牌（AA,KK,QQ,AK），保守玩家加注就是强牌"
+                else:
+                    return "对手范围：中等强度（对子，高牌），很少诈唬"
+            else:
+                return "对手范围：标准起手牌范围，中等强度"
+        
+        else:  # 翻牌后
+            pot = round_state['pot']['main']['amount']
+            if opponent_current_action:
+                action_type = opponent_current_action['type']
+                amount = opponent_current_action['amount']
+                
+                if tendency == 'very_aggressive':
+                    if action_type == 'bet' and amount > pot * 0.7:
+                        return "对手可能：强牌（顶对+）或大额诈唬"
+                    elif action_type == 'raise':
+                        return "对手可能：强牌或标准诈唬，激进玩家范围较宽"
+                    else:
+                        return "对手可能：中等牌力，跟注范围较宽"
+                elif tendency == 'very_passive':
+                    if action_type == 'raise':
+                        return "对手可能：极强牌（两对+），保守玩家加注很少诈唬"
+                    elif action_type == 'bet':
+                        return "对手可能：成牌（对子+），很少纯诈唬"
+                    else:
+                        return "对手可能：边缘牌或听牌，谨慎跟注"
+                else:
+                    return "对手范围：标准成牌范围，结合牌面分析"
+            else:
+                return "对手尚未行动，范围较宽"
+        
+        return "对手范围：标准范围"
+
     def _get_active_opponents(self, round_state):
         """获取活跃对手数量（排除已弃牌玩家）"""
         seats = round_state.get('seats', [])
@@ -298,7 +442,7 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         
         action_text = action_names.get(action, action)
         if amount > 0:
-            print(f"🎯 {action_text} ${amount}")
+            print(f"🎯 {action_text} ${int(amount)}")
         else:
             print(f"🎯 {action_text}")
     
@@ -706,6 +850,22 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         else:
             return "中性牌面，对手范围较宽"
     
+    def _get_previous_bets(self, round_state):
+        """获取前面玩家的下注金额（排除盲注）"""
+        action_histories = round_state.get('action_histories', {})
+        street = round_state['street']
+        previous_bets = []
+
+        if street in action_histories:
+            for action in action_histories[street]:
+                if isinstance(action, dict) and action.get('action') in ['raise', 'bet']:
+                    amount = action.get('amount', 0)
+                    # 排除盲注（金额<=20且是preflop）
+                    if not (street == 'preflop' and amount <= 20):
+                        previous_bets.append(amount)
+
+        return previous_bets
+
     def _improved_easy_strategy(self, fold_action, call_action, raise_action, hole_card, round_state):
         """改进的简单策略 - 更精细的决策"""
         street = round_state['street']
@@ -717,8 +877,20 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         # 位置因子
         position_factor = self._get_position_factor(round_state)
         
+        # 获取前位下注金额
+        previous_bets = self._get_previous_bets(round_state)
+        max_previous_bet = max(previous_bets) if previous_bets else 0
+        
         # 调整后的牌力阈值
         adjusted_strength = hand_strength * position_factor
+        
+        # 根据前位下注金额调整策略
+        if max_previous_bet > pot * 0.5:
+            # 前位下注很大，收紧范围
+            adjusted_strength *= 0.9
+        elif max_previous_bet < pot * 0.1 and max_previous_bet > 0:
+            # 前位下注很小，放宽范围
+            adjusted_strength *= 1.1
         
         # 获取当前筹码量
         my_stack = self._get_my_stack(round_state)
@@ -851,8 +1023,40 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         # 公共牌协调性
         board_coordination = self._assess_board_coordination(round_state.get('community_card', []))
         
+        # 获取前位下注金额
+        previous_bets = self._get_previous_bets(round_state)
+        max_previous_bet = max(previous_bets) if previous_bets else 0
+        
         # 调整后的牌力阈值
         adjusted_strength = hand_strength * position_factor * opponent_tendency
+        
+        # 单挑场景：根据对手建模调整策略
+        if self._is_heads_up(round_state):
+            heads_up_analysis = self._analyze_heads_up_opponent(round_state)
+            if heads_up_analysis:
+                tendency = heads_up_analysis['tendency']
+                
+                # 根据对手类型调整策略
+                if tendency == 'very_aggressive':
+                    # 对手非常激进，收紧范围，多用强牌反击
+                    adjusted_strength *= 0.9
+                elif tendency == 'very_passive':
+                    # 对手非常保守，放宽范围，多偷盲
+                    adjusted_strength *= 1.1
+                elif tendency == 'aggressive':
+                    # 对手激进，适度收紧
+                    adjusted_strength *= 0.95
+                elif tendency == 'passive':
+                    # 对手保守，适度放宽
+                    adjusted_strength *= 1.05
+        
+        # 根据前位下注金额调整策略
+        if max_previous_bet > pot * 0.5:
+            # 前位下注很大，收紧范围
+            adjusted_strength *= 0.85
+        elif max_previous_bet < pot * 0.1 and max_previous_bet > 0:
+            # 前位下注很小，放宽范围
+            adjusted_strength *= 1.15
         
         # 根据牌面调整牌力评估
         if street != 'preflop':
@@ -1026,8 +1230,23 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         # 公共牌协调性
         board_coordination = self._assess_board_coordination(round_state.get('community_card', []))
         
+        # 获取前位下注金额
+        previous_bets = self._get_previous_bets(round_state)
+        max_previous_bet = max(previous_bets) if previous_bets else 0
+        
         # 调整后的牌力阈值
         adjusted_strength = hand_strength * position_factor * opponent_tendency
+        
+        # 根据前位下注金额调整策略（困难策略更敏感）
+        if max_previous_bet > pot * 0.6:
+            # 前位下注很大，大幅收紧范围
+            adjusted_strength *= 0.8
+        elif max_previous_bet > pot * 0.3:
+            # 前位下注中等，适度收紧
+            adjusted_strength *= 0.9
+        elif max_previous_bet < pot * 0.1 and max_previous_bet > 0:
+            # 前位下注很小，放宽范围
+            adjusted_strength *= 1.2
         
         # 根据牌面调整牌力评估
         if street != 'preflop':
@@ -1424,8 +1643,8 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
             if hand_strength >= 0.7:
                 bet_ratio *= 1.05
         
-        # 确保下注比例在合理范围内
-        bet_ratio = max(0.2, min(1.0, bet_ratio))  # 限制在20%-100%之间
+        # 确保下注比例在合理范围内（避免过度下注）
+        bet_ratio = max(0.2, min(0.8, bet_ratio))  # 限制在20%-80%之间，避免过度激进
         
         bet_size = int(pot * bet_ratio)
         
@@ -1785,6 +2004,17 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
             formatted_cards = self._format_hole_cards_display(hole_card)
             thinking_steps.append(f"🎯 {hand_desc} {formatted_cards}")
         
+        # 单挑场景：展示对手建模和范围预测
+        if self._is_heads_up(round_state):
+            heads_up_analysis = self._analyze_heads_up_opponent(round_state)
+            if heads_up_analysis:
+                thinking_steps.append(f"🎯 单挑分析: {heads_up_analysis['description']}")
+                
+                # 预测对手范围
+                range_prediction = self._predict_opponent_range_heads_up(round_state, heads_up_analysis)
+                if range_prediction:
+                    thinking_steps.append(f"🔍 {range_prediction}")
+        
         # 基于实际决策生成GTO分析
         if action_result:
             action = action_result[0]  # fold, call, raise
@@ -1805,7 +2035,7 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
                     'raise': '📈 加注'
                 }.get(action, action)
                 
-                thinking_steps.append(f"🧠 GTO策略: {action_text} ${amount} (置信度: {confidence:.0%})")
+                thinking_steps.append(f"🧠 GTO策略: {action_text} ${int(amount)} (置信度: {confidence:.0%})")
                 
                 # 显示频率分布
                 if frequencies:
