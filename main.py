@@ -36,13 +36,23 @@ def main():
     
     # AI 功能状态
     ai_config = config.get_ai_config()
-    print(f"\n🤖 AI 功能状态:")
-    print(f"  AI思考显示: {'✅ 开启' if ai_config['show_thinking'] else '🔴 关闭'}")
-    print(f"  策略建议: {'🔴 未启用 (Phase 2)' if not ai_config['auto_show_advice'] else '✅ 启用'}")
-    print(f"  对手分析: {'🔴 未启用 (Phase 2)' if not ai_config['enable_opponent_analysis'] else '✅ 启用'}")
-    print(f"  牌面分析: {'🔴 未启用 (Phase 2)' if not ai_config['enable_board_analysis'] else '✅ 启用'}")
-    print(f"  对局复盘: {'🔴 未启用 (Phase 2)' if not ai_config['enable_review'] else '✅ 启用'}")
-    print(f"  自由提问: {'🔴 未启用 (Phase 2)' if not ai_config['enable_chat'] else '✅ 启用'}")
+    
+    # 询问用户是否开启三体人模式
+    print(f"\n🛸 三体人模式设置:")
+    while True:
+        choice = input("是否开启三体人模式(AI明牌)? [y/n]: ").strip().lower()
+        if choice in ['y', 'yes', '是']:
+            config.set_show_thinking(True)
+            print("✅ 三体人模式已开启 - AI将显示其思考过程和手牌")
+            break
+        elif choice in ['n', 'no', '否', '']:
+            config.set_show_thinking(False)
+            print("🔴 三体人模式已关闭 - AI思考过程将保持神秘")
+            break
+        else:
+            print("请输入 y/yes/是 或 n/no/否，或直接按回车选择否")
+    
+    print(f"  三体人模式(AI明牌): {'✅ 开启' if config.get_ai_config()['show_thinking'] else '🔴 关闭'}")
     
     # API Key 状态
     if config.DEEPSEEK_API_KEY:

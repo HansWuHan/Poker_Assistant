@@ -33,7 +33,7 @@ class GameController:
         self.game_config = config.get_game_config()
         self.ai_config = config.get_ai_config()
         self.renderer = GameRenderer()
-        self.input_handler = InputHandler(chat_callback=self._handle_chat, renderer=self.renderer)
+        self.input_handler = InputHandler(chat_callback=self._handle_chat, renderer=self.renderer, config=self.ai_config)
         self.game_state = None
         self.human_player = None
         self.ai_players = []
@@ -69,7 +69,7 @@ class GameController:
                 self.strategy_advisor.set_opponent_modeler(self.opponent_modeler)
                 self.opponent_analyzer.set_opponent_modeler(self.opponent_modeler)
                 
-                self.renderer.render_info("✅ AI 分析功能已启用（含对手建模）")
+                self.renderer.render_info("✅ AI 分析功能已就绪")
             except Exception as e:
                 self.ai_enabled = False
                 self.renderer.render_info(f"⚠️  AI 功能初始化失败: {e}")
@@ -116,7 +116,7 @@ class GameController:
         # 创建输入处理器
         self.input_handler = InputHandler(
             chat_callback=self._handle_chat if hasattr(self, '_handle_chat') else None,
-            renderer=self.renderer
+            renderer=self.renderer,
         )
         
         # 创建人类玩家
@@ -128,7 +128,7 @@ class GameController:
         # 创建 AI 对手
         ai_difficulties = self._get_ai_difficulties(player_count - 1)
         self.ai_players = [
-            EnhancedAIOpponentPlayer(difficulty=diff, shared_hole_cards=self.shared_hole_cards, show_thinking=True) 
+            EnhancedAIOpponentPlayer(difficulty=diff, shared_hole_cards=self.shared_hole_cards, show_thinking=self.ai_config["show_thinking"]) 
             for diff in ai_difficulties
         ]
         

@@ -9,7 +9,7 @@ import sys
 class InputHandler:
     """输入处理器"""
     
-    def __init__(self, chat_callback: Optional[Callable] = None, renderer=None):
+    def __init__(self, chat_callback: Optional[Callable] = None, renderer=None, config=None):
         """
         Args:
             chat_callback: 处理聊天的回调函数
@@ -19,7 +19,6 @@ class InputHandler:
         self.renderer = renderer
         self.chat_mode = False
         self.ai_thinking_toggle_callback = None  # AI思考显示切换回调
-        self.ai_show_thinking = True  # 默认显示AI思考过程
     
     def get_action(self, valid_actions: list, hole_card: list, 
                    round_state: dict, ai_advice_callback=None) -> Tuple[str, int]:
@@ -111,13 +110,7 @@ class InputHandler:
                         # 使用回调函数切换所有AI玩家的思考显示
                         new_status = self.ai_thinking_toggle_callback()
                         status_text = "开启" if new_status else "关闭"
-                        print(f"\n🔄 AI思考显示已{status_text}")
-                    else:
-                        # 本地切换（仅影响当前输入处理器）
-                        self.ai_show_thinking = not self.ai_show_thinking
-                        status = "开启" if self.ai_show_thinking else "关闭"
-                        print(f"\n🔄 AI思考显示已{status}")
-                    print("-" * 40)
+                        print(f"\n🔄 三体人模式(AI明牌)已{status_text}")
                     continue
                 
                 else:
@@ -150,7 +143,7 @@ class InputHandler:
             actions.append("[O]牌力分析")
         
         # 添加AI思考显示切换按钮
-        actions.append(f"[P]AI思考开关")
+        actions.append(f"[P]三体人模式(AI明牌)开关")
         
         actions.append("[Q]提问")
         actions.append("[H]帮助")

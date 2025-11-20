@@ -390,7 +390,7 @@ class GameRenderer:
     
     def render_info(self, message: str):
         """渲染提示信息"""
-        self.console.print(f"ℹ️  {message}", style="cyan")
+        self.console.print(f"{message}", style="cyan")
     
     def _render_hole_cards(self, hole_card: List[str]):
         """渲染手牌"""

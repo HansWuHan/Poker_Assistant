@@ -45,10 +45,7 @@ class Config:
         self.AI_OPPONENT_DIFFICULTY = os.getenv("AI_OPPONENT_DIFFICULTY", "mixed")  # easy/medium/hard/mixed
         self.AI_ANALYSIS_LEVEL = os.getenv("AI_ANALYSIS_LEVEL", "medium")
         self.AI_AUTO_SHOW_ADVICE = os.getenv("AI_AUTO_SHOW_ADVICE", "true").lower() == "true"
-        self.AI_ENABLE_OPPONENT_ANALYSIS = os.getenv("AI_ENABLE_OPPONENT_ANALYSIS", "true").lower() == "true"
-        self.AI_ENABLE_BOARD_ANALYSIS = os.getenv("AI_ENABLE_BOARD_ANALYSIS", "true").lower() == "true"
         self.AI_ENABLE_REVIEW = os.getenv("AI_ENABLE_REVIEW", "true").lower() == "true"
-        self.AI_ENABLE_CHAT = os.getenv("AI_ENABLE_CHAT", "true").lower() == "true"
         self.AI_SHOW_THINKING = os.getenv("AI_SHOW_THINKING", "true").lower() == "true"
         
         # LLM 配置
@@ -78,10 +75,7 @@ class Config:
             "opponent_difficulty": self.AI_OPPONENT_DIFFICULTY,
             "analysis_level": self.AI_ANALYSIS_LEVEL,
             "auto_show_advice": self.AI_AUTO_SHOW_ADVICE,
-            "enable_opponent_analysis": self.AI_ENABLE_OPPONENT_ANALYSIS,
-            "enable_board_analysis": self.AI_ENABLE_BOARD_ANALYSIS,
             "enable_review": self.AI_ENABLE_REVIEW,
-            "enable_chat": self.AI_ENABLE_CHAT,
             "show_thinking": self.AI_SHOW_THINKING,
         }
     
@@ -123,6 +117,10 @@ class Config:
             return False
         
         return True
+    
+    def set_show_thinking(self, enabled: bool):
+        """设置是否显示AI思考过程（三体人模式）"""
+        self.AI_SHOW_THINKING = enabled
 
 
 # 全局配置实例
