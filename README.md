@@ -12,6 +12,7 @@
 - 📊 **公共牌面分析** - 智能分析牌面结构和胜率
 - 📝 **对局复盘** - 每局结束后的详细复盘报告
 - 💬 **自由提问** - 对局中随时向 AI 提问
+- 🛸 **三体人模式** - 开启后AI将明牌显示其思考过程和手牌信息
 
 ## 🚀 快速开始
 
@@ -24,7 +25,7 @@
 
 ```bash
 # 克隆项目
-git clone <your-repo-url>
+git clone https://github.com/HansWuHan/Poker_Assistant
 cd Poker_Assistant
 
 # 创建虚拟环境
@@ -55,6 +56,20 @@ DEEPSEEK_API_KEY=your_api_key_here
 ```bash
 python main.py
 ```
+
+### 三体人模式
+
+首次运行时会提示是否开启**三体人模式**（AI明牌）：
+
+```
+🛸 三体人模式设置:
+是否开启三体人模式(AI明牌)? [y/N]: 
+```
+
+- **开启（y）**: AI将显示其思考过程和手牌信息，适合学习和分析AI策略
+- **关闭（n）**: AI思考过程保持神秘，提供正常的对战体验
+
+该模式可随时通过配置文件调整，让AI像三体人一样"透明"思考！
 
 ## 🎮 使用指南
 
@@ -113,14 +128,15 @@ Poker_Assistant/
 ├── poker_assistant/        # 主包
 │   ├── engine/            # 游戏引擎
 │   ├── ai_analysis/       # AI 分析模块
+│   ├── gto_strategy/      # GTO策略模块
 │   ├── llm_service/       # LLM 服务
 │   ├── cli/               # 命令行界面
-│   ├── data/              # 数据持久化
 │   ├── utils/             # 工具函数
 │   └── prompts/           # AI Prompt 模板
-├── tests/                 # 测试
 ├── data/                  # 数据目录
 ├── logs/                  # 日志
+├── requirements.txt       # 依赖包
+├── setup.py              # 安装脚本
 └── main.py               # 主入口
 ```
 
@@ -139,6 +155,7 @@ Poker_Assistant/
 可以调整：
 - AI 分析详细程度
 - 是否自动显示建议
+- 三体人模式（AI明牌）开关
 - LLM 模型参数
 
 ## 🧪 开发
@@ -179,13 +196,18 @@ A: 请检查：
 ### Q: 想要调整游戏难度？
 A: 修改 `poker_assistant/utils/config.py` 中的 AI 对手配置。
 
+### Q: 三体人模式是什么？
+A: 三体人模式是一种特殊的游戏模式，开启后AI会透明地显示其思考过程和手牌信息，就像《三体》中的三体人一样"透明思考"。这非常适合学习AI的决策逻辑和策略分析。
+
+### Q: 如何切换三体人模式？
+A: 每次启动游戏时都会询问是否开启三体人模式。也可以在游戏配置文件中修改 `AI_SHOW_THINKING` 设置。
+
 ## 🗺️ Roadmap
 
 - [x] MVP 基础功能
+- [x] 三体人模式（AI明牌）
 - [ ] Web 界面
 - [ ] 更高级的 AI 对手
-- [ ] 多桌训练模式
-- [ ] 策略库和预设
 - [ ] 移动端支持
 
 ## 📄 许可
@@ -196,6 +218,7 @@ MIT License
 
 - [PyPokerEngine](https://github.com/ishikota/PyPokerEngine) - 优秀的德州扑克引擎
 - [Deepseek](https://www.deepseek.com/) - 强大的 AI 能力
+- [Galigeege](https://github.com/Galigeege) - 原项目作者
 
 ## 📮 反馈
 
