@@ -586,6 +586,10 @@ class ImprovedAIOpponentPlayer(BasePokerPlayer):
         """接收回合开始消息"""
         self.hole_cards = hole_card
         self.round_count = round_count
+        
+        # 将手牌记录到共享字典中，用于摊牌时显示
+        if self.shared_hole_cards is not None:
+            self.shared_hole_cards[self.uuid] = hole_card
     
     def receive_street_start_message(self, street, round_state):
         """接收街道开始消息"""

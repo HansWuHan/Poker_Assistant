@@ -66,9 +66,9 @@ class ReviewAnalyzer:
             # 格式化手牌信息
             hand_info_str = self._format_hand_info(hand_info)
             
-            # 构建 prompt
+            # 构建 prompt - 使用GTO优化版模板
             prompt = self.prompt_manager.format_template(
-                "review_analysis",
+                "review_analysis_gto",
                 round_count=round_count,
                 result=result,
                 winners=winners_str,

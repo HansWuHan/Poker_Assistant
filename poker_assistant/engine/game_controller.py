@@ -341,12 +341,23 @@ class GameController:
                 
                 is_human = (player_name == "你")
                 
+                # 保存行动前的底池大小（用于正确的比例计算）
+                action_amount = action.get('amount', 0)
+                current_pot = round_state.get('pot', {}).get('main', {}).get('amount', 0)
+                pot_before_action = current_pot - action_amount  # 行动前的底池
+                
+                # 创建修正的round_state副本，包含行动前的底池
+                corrected_round_state = round_state.copy()
+                corrected_round_state['pot'] = {
+                    'main': {'amount': pot_before_action}
+                }
+                
                 self.renderer.render_player_action(
                     player_name,
                     action['action'],
-                    action.get('amount', 0),
+                    action_amount,
                     is_human,
-                    round_state,
+                    corrected_round_state,  # 使用修正的底池数据
                     action['player_uuid']
                 )
             
@@ -367,7 +378,6 @@ class GameController:
                 # 如果启用了复盘功能，进行AI复盘分析
                 if self.ai_enabled and self.ai_config.get('enable_review', True):
                     try:
-                        print("\n🤖 AI复盘中，请稍候...")
                         review_text = self.hand_review_manager.perform_review(
                             round_state=round_state,
                             winners=winners,
