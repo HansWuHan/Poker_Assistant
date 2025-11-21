@@ -19,6 +19,7 @@ from poker_assistant.ai_analysis.board_analyzer import BoardAnalyzer
 from poker_assistant.ai_analysis.review_analyzer import ReviewAnalyzer
 from poker_assistant.ai_analysis.chat_agent import ChatAgent
 from poker_assistant.ai_analysis.opponent_modeler import OpponentModeler
+from poker_assistant.ai_analysis.hand_review_manager import HandReviewManager
 
 
 class GameController:
@@ -64,6 +65,7 @@ class GameController:
                 self.board_analyzer = BoardAnalyzer()
                 self.review_analyzer = ReviewAnalyzer()
                 self.chat_agent = ChatAgent()
+                self.hand_review_manager = HandReviewManager()
                 
                 # 设置对手建模器
                 self.strategy_advisor.set_opponent_modeler(self.opponent_modeler)
@@ -361,6 +363,31 @@ class GameController:
                 self.renderer.render_round_result(
                     winners, hand_info, round_state, self.initial_stacks, final_hole_cards
                 )
+                
+                # 如果启用了复盘功能，进行AI复盘分析
+                if self.ai_enabled and self.ai_config.get('enable_review', True):
+                    try:
+                        print("\n🤖 AI复盘中，请稍候...")
+                        review_text = self.hand_review_manager.perform_review(
+                            round_state=round_state,
+                            winners=winners,
+                            hand_info=hand_info,
+                            final_hole_cards=final_hole_cards,
+                            human_player_uuid=self.human_player.uuid
+                        )
+                        
+                        if review_text:
+                            print("\n" + "="*60)
+                            print("🤖 AI 复盘分析")
+                            print("="*60)
+                            print(review_text)
+                            print("="*60)
+                        else:
+                            print("⚠️ 复盘分析暂时不可用")
+                    except Exception as e:
+                        if self.config.DEBUG:
+                            print(f"❌ 复盘分析失败: {e}")
+                
                 self.renderer.wait_for_continue()
         
         except Exception as e:
