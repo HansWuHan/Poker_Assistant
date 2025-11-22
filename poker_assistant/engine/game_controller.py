@@ -375,30 +375,111 @@ class GameController:
                     winners, hand_info, round_state, self.initial_stacks, final_hole_cards
                 )
                 
-                # 如果启用了复盘功能，进行AI复盘分析
+                # 如果启用了复盘功能，进行交互式AI复盘分析
                 if self.ai_enabled and self.ai_config.get('enable_review', True):
                     try:
-                        review_text = self.hand_review_manager.perform_review(
-                            round_state=round_state,
-                            winners=winners,
-                            hand_info=hand_info,
-                            final_hole_cards=final_hole_cards,
-                            human_player_uuid=self.human_player.uuid
-                        )
+                        # 显示交互提示
+                        print("\n💡 操作选项:")
+                        print("  按 [空格键] 查看AI复盘分析")
+                        print("  按 [Enter键] 直接进入下一局")
+                        print("  按 [Q键] 退出游戏")
                         
-                        if review_text:
-                            print("\n" + "="*60)
-                            print("🤖 AI 复盘分析")
-                            print("="*60)
-                            print(review_text)
-                            print("="*60)
-                        else:
-                            print("⚠️ 复盘分析暂时不可用")
+                        while True:
+                            # 获取用户输入
+                            import sys
+                            import tty
+                            import termios
+                            
+                            try:
+                                # 读取单个字符
+                                fd = sys.stdin.fileno()
+                                old_settings = termios.tcgetattr(fd)
+                                try:
+                                    tty.setraw(sys.stdin.fileno())
+                                    key = sys.stdin.read(1)
+                                finally:
+                                    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                                
+                                # 处理按键
+                                if key == ' ' or key == ' ':  # 空格键
+                                    review_text = self.hand_review_manager.perform_review(
+                                        round_state=round_state,
+                                        winners=winners,
+                                        hand_info=hand_info,
+                                        final_hole_cards=final_hole_cards,
+                                        human_player_uuid=self.human_player.uuid
+                                    )
+                                    
+                                    if review_text:
+                                        print("\n" + "="*60)
+                                        print("🤖 AI 复盘分析")
+                                        print("="*60)
+                                        print(review_text)
+                                        print("="*60)
+                                    else:
+                                        print("⚠️ 复盘分析暂时不可用")
+                                    
+                                    # 分析完成后，提示继续
+                                    print("\n💡 按 [Enter键] 进入下一局，或按 [Q键] 退出")
+                                    
+                                elif key == '\r' or key == '\n':  # Enter键
+                                    print("\n🔄 进入下一局...")
+                                    break
+                                    
+                                elif key.lower() == 'q':  # Q键退出
+                                    print("\n👋 感谢游戏！")
+                                    # 设置退出标志
+                                    self._should_exit = True
+                                    break
+                                    
+                                else:
+                                    print(f"\n❌ 无效按键 '{key}'，请按空格键、Enter键或Q键")
+                                    
+                            except (ImportError, OSError):
+                                # 如果无法使用终端控制，回退到简单输入
+                                print("\n💡 请输入操作: [空格]复盘 [回车]下一局 [Q]退出")
+                                user_input = input().strip().lower()
+                                
+                                if user_input == '' or user_input == 'enter':
+                                    print("\n🔄 进入下一局...")
+                                    break
+                                elif user_input == ' ' or user_input == 'space':
+                                    print("\n🤖 正在生成AI复盘分析...")
+                                    review_text = self.hand_review_manager.perform_review(
+                                        round_state=round_state,
+                                        winners=winners,
+                                        hand_info=hand_info,
+                                        final_hole_cards=final_hole_cards,
+                                        human_player_uuid=self.human_player.uuid
+                                    )
+                                    
+                                    if review_text:
+                                        print("\n" + "="*60)
+                                        print("🤖 AI 复盘分析")
+                                        print("="*60)
+                                        print(review_text)
+                                        print("="*60)
+                                    else:
+                                        print("⚠️ 复盘分析暂时不可用")
+                                elif user_input == 'q':
+                                    print("\n👋 感谢游戏！")
+                                    self._should_exit = True
+                                    break
+                                else:
+                                    print(f"\n❌ 无效输入 '{user_input}'")
+                        
+                        # 如果用户选择退出，抛出异常中断游戏
+                        if hasattr(self, '_should_exit') and self._should_exit:
+                            raise KeyboardInterrupt("用户选择退出")
+                            
                     except Exception as e:
                         if self.config.DEBUG:
                             print(f"❌ 复盘分析失败: {e}")
-                
-                self.renderer.wait_for_continue()
+                        # 即使复盘失败，也继续游戏
+                        self.renderer.wait_for_continue()
+                else:
+                    # 如果没有启用复盘功能，使用原来的等待方式
+                    self.renderer.wait_for_continue()
         
         except Exception as e:
             if self.config.DEBUG:

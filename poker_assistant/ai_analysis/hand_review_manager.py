@@ -73,7 +73,7 @@ class HandReviewManager:
             sys.stdout.flush()
             print(f"复盘分析失败: {e}")
             return None
-    
+
     def _show_loading_animation(self):
         """显示复盘加载动画"""
         animation_chars = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"]
@@ -82,7 +82,7 @@ class HandReviewManager:
             char = animation_chars[i % len(animation_chars)]
             sys.stdout.write(f"\r{char} AI正在深度分析这手牌...")
             sys.stdout.flush()
-            time.sleep(0.5)  # 每帧150ms
+            time.sleep(1)  # 每帧150ms
     
     def _extract_action_history(self, round_state: dict) -> list:
         """
